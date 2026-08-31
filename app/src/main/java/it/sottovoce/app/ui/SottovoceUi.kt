@@ -163,7 +163,7 @@ private val DarkColors = darkColorScheme(primary = Color(0xFFB1D2A5), onPrimary 
             "edit" -> if (book != null) EditBookDialog(book, onDismiss = { dialog = null }) { title, author, narrator -> vm.saveMetadata(book, title, author, narrator); dialog = null }
             "speed" -> ChoiceDialog("Velocità di ascolto", listOf(.5f,.75f,1f,1.1f,1.25f,1.5f,1.75f,2f,2.5f,3f).map { it.toString()+"×" to it }, vm.now.speed, { dialog = null }) { vm.speed(it); dialog = null }
             "timer" -> ChoiceDialog("Timer di spegnimento", listOf("Disattivato" to 0,"15 minuti" to 15,"30 minuti" to 30,"45 minuti" to 45,"60 minuti" to 60,"Fine capitolo / traccia" to -1), null, { dialog = null }) { vm.timer(it); dialog = null }
-            "theme" -> ChoiceDialog("Aspetto", listOf("Come il sistema" to "system","Chiaro" to "light","Scuro" to "dark"), vm.theme, { dialog = null }) { vm.setTheme(it); dialog = null }
+            "theme" -> ChoiceDialog("Aspetto", listOf("Come il sistema" to "system","Chiaro" to "light","Scuro" to "dark"), vm.theme, { dialog = null }) { vm.changeTheme(it); dialog = null }
             "skips" -> ChoiceDialog("Salti del lettore", listOf("Indietro 10 s · avanti 10 s" to (10 to 10),"Indietro 15 s · avanti 30 s" to (15 to 30),"Indietro 30 s · avanti 30 s" to (30 to 30),"Indietro 60 s · avanti 60 s" to (60 to 60)), vm.skipBack to vm.skipForward, { dialog = null }) { vm.setSkips(it.first,it.second); dialog = null }
             "bookmark" -> NoteDialog({ dialog = null }) { vm.addBookmark(it); dialog = null }
             "remove", "copies" -> if (book != null) AlertDialog(onDismissRequest = { dialog = null }, title = { Text(if (dialog == "copies") "Eliminare le copie nell’app?" else "Rimuovere il libro?") },
@@ -326,10 +326,10 @@ private fun chapters(book: Book): List<ChapterRow> = book.tracks.flatMapIndexed 
             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(timeLabel((dragging?.toLong()?:now.position)),style=MaterialTheme.typography.bodySmall);Text(timeLabel(duration),style=MaterialTheme.typography.bodySmall)}
             Spacer(Modifier.height(8.dp)); Text("Libro: ${timeLabel(totalPlayed)} / ${timeLabel(book.durationMs)}",style=MaterialTheme.typography.bodySmall,color=MaterialTheme.colorScheme.onSurfaceVariant)
         } }
-        item { Row(horizontalArrangement=Arrangement.spacedBy(20.dp),verticalAlignment=Alignment.CenterVertically) {
-            OutlinedButton(onClick={vm.skip(-vm.skipBack)}){Text("↶ ${vm.skipBack} s")}
+        item { Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp),verticalAlignment=Alignment.CenterVertically) {
+            OutlinedButton(onClick={vm.skip(-vm.skipBack)},modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=6.dp)){Text("↶ ${vm.skipBack} s")}
             FilledIconButton(onClick=vm::togglePlay,modifier=Modifier.size(76.dp).testTag("play_pause")){Icon(if(now.playing)Icons.Default.Pause else Icons.Default.PlayArrow,if(now.playing)"Pausa" else "Riprendi ascolto",Modifier.size(38.dp))}
-            OutlinedButton(onClick={vm.skip(vm.skipForward)}){Text("${vm.skipForward} s ↷")}
+            OutlinedButton(onClick={vm.skip(vm.skipForward)},modifier=Modifier.weight(1f),contentPadding=PaddingValues(horizontal=6.dp)){Text("${vm.skipForward} s ↷")}
         } }
         item { FlowRow(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick=onSpeed){Icon(Icons.Default.Speed,null);Text("${now.speed}×")}
@@ -346,7 +346,7 @@ private fun chapters(book: Book): List<ChapterRow> = book.tracks.flatMapIndexed 
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
         item { Text(if(vm.relinkId!=null)"Ricollega la registrazione" else "Controlla l’importazione",style=MaterialTheme.typography.headlineMedium) }
         if(vm.relinkId!=null) item { Text("Scegli la stessa registrazione con lo stesso numero e ordine di file. Confermando manterrai i vecchi progressi e segnalibri; una lettura diversa potrebbe non corrispondere.",color=MaterialTheme.colorScheme.error) }
-        else item { ListItem(headlineContent={Text("Copia i file nell’app")},supportingContent={Text(if(vm.copyImports)"Usa spazio aggiuntivo. Conserva gli originali separatamente." else "Usa gli originali: non spostarli dopo l’importazione.")},trailingContent={Switch(vm.copyImports,{vm.copyImports=it})}) }
+        else item { ListItem(headlineContent={Text("Copia i file nell’app")},supportingContent={Text(if(vm.mustCopyImports)"Copia necessaria: questo archivio non concede accesso permanente." else if(vm.copyImports)"Usa spazio aggiuntivo. Conserva gli originali separatamente." else "Usa gli originali: non spostarli dopo l’importazione.")},trailingContent={Switch(vm.copyImports,{vm.copyImports=it},enabled=!vm.mustCopyImports)}) }
         items(vm.candidates,key={it.id}) { b -> Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
             Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(b.title,{vm.changeCandidate(b.id,title=it)},label={Text("Titolo")},modifier=Modifier.fillMaxWidth())

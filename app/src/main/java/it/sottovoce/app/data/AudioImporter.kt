@@ -27,7 +27,8 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
     suspend fun folder(uri: Uri): List<Book> = withContext(Dispatchers.IO) {
         val root = requireNotNull(DocumentFile.fromTreeUri(context, uri)) { "Cartella non accessibile." }
         val children = root.listFiles().sortedWith { a, b -> NaturalOrder.compare(a.name.orEmpty(), b.name.orEmpty()) }
-        var count = 0
+        require(children.size <= 10_000) { "Cartella troppo grande: scegli una sottocartella." }
+        var count = children.size
         suspend fun collect(node: DocumentFile, depth: Int): List<Uri> {
             require(depth <= 12) { "La cartella contiene troppi livelli." }
             currentCoroutineContext().ensureActive()
@@ -43,6 +44,7 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
         }
         val groups = mutableListOf<Book>()
         val direct = children.filter { it.isFile && supported(it.name.orEmpty()) }.map { it.uri }
+        require(direct.size <= 2000) { "Troppi file per un solo libro." }
         if (direct.isNotEmpty()) groups += describe(direct, root.name)
         for (child in children.filter { it.isDirectory }) {
             val tracks = collect(child, 1)

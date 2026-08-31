@@ -94,6 +94,18 @@ class AppSmokeTest {
         runBlocking{app.library.load()}
         assertEquals("Un passaggio da ricordare",app.library.bookmarks.value.single().note)
     }
+    @Test fun endOfTrackTimerStopsBeforeNextFile() {
+        val book=seed()
+        val second=book.tracks.single().copy(id=java.util.UUID.randomUUID().toString(),name="Capitolo 2")
+        val multi=book.copy(tracks=book.tracks+second)
+        runBlocking{app.library.update(book.id){multi}}
+        compose.runOnIdle{vm.playBook(multi)}
+        compose.waitUntil(10_000){vm.now.playing}
+        compose.runOnIdle{vm.seek(28_000);vm.timer(-1)}
+        compose.waitUntil(10_000){!vm.now.playing && vm.now.position>=29_000}
+        assertEquals(0,vm.now.trackIndex)
+        assertTrue(it.sottovoce.app.playback.PlaybackSignals.timer.value.isEmpty())
+    }
     @Test fun importingCopiesAndDeletingNeverTouchesTheOriginal() {
         val resolver=context.contentResolver
         val source=requireNotNull(resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,ContentValues().apply{
@@ -123,8 +135,13 @@ class AppSmokeTest {
         runBlocking {
             app.library.savePosition(book.id,0,5000,1.25f)
             app.library.bookmark(Bookmark(bookId=book.id,trackIndex=0,positionMs=4000,note="Nota locale"))
+            context.getSharedPreferences("preferences",0).edit().putString("theme","dark").putInt("skipBack",30).commit()
             val backup=app.library.exportBackup()
+            assertEquals("dark",backup.preferences.theme)
+            context.getSharedPreferences("preferences",0).edit().putString("theme","light").commit()
             app.library.restore(backup)
+            assertEquals("dark",context.getSharedPreferences("preferences",0).getString("theme",null))
+            assertEquals(30,context.getSharedPreferences("preferences",0).getInt("skipBack",0))
             val restored=app.library.books.value.single()
             assertTrue(restored.needsRelink)
             assertEquals(5000L,restored.positionMs)

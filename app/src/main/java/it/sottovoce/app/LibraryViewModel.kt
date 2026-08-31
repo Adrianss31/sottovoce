@@ -52,6 +52,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         private set
     var message by mutableStateOf<String?>(null)
     var candidates by mutableStateOf<List<Book>>(emptyList())
+    var mustCopyImports by mutableStateOf(false)
+        private set
     var copyImports by mutableStateOf(false)
     var relinkId by mutableStateOf<String?>(null)
     var pendingBackup by mutableStateOf<Backup?>(null)
@@ -105,11 +107,15 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     private fun persist(uris: List<Uri>, flags: Int) {
+        mustCopyImports = false
         val take = flags and Intent.FLAG_GRANT_READ_URI_PERMISSION
         uris.forEach { uri ->
             require(uri.scheme == "content") { "Scegli file presenti sul dispositivo." }
             try { app.contentResolver.takePersistableUriPermission(uri, take) }
-            catch (_: SecurityException) { copyImports = true }
+            catch (_: SecurityException) {
+                require(relinkId == null) { "Questo archivio non concede accesso permanente. Per ricollegare, scegli i file dalla memoria del telefono." }
+                mustCopyImports = true; copyImports = true
+            }
         }
     }
     fun changeCandidate(id: String, title: String? = null, author: String? = null) {
@@ -123,7 +129,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun confirmImport() = task(if (copyImports) "Copia dei file…" else "Importazione…") {
         val replacing = relinkId
         if (replacing != null && now.bookId == replacing) stopCurrent()
-        val count = importer.commit(candidates, copyImports && replacing == null, replacing)
+        val count = importer.commit(candidates, (copyImports || mustCopyImports) && replacing == null, replacing)
         candidates = emptyList(); relinkId = null; screen = "library"
         message = if (replacing != null) "File ricollegati. Progressi e segnalibri conservati." else "$count ${if (count == 1) "libro importato" else "libri importati"}."
     }
@@ -220,7 +226,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         stopCurrent()
         onIntent(updater.install(file))
     }
-    fun setTheme(value: String) { theme = value; prefs.edit().putString("theme", value).apply() }
+    fun changeTheme(value: String) { theme = value; prefs.edit().putString("theme", value).apply() }
     fun setSkips(back: Int, forward: Int) {
         skipBack = back; skipForward = forward
         prefs.edit().putInt("skipBack", back).putInt("skipForward", forward).apply()
