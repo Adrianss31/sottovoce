@@ -195,7 +195,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
     fun restoreBackup() = task("Ripristino…") {
         val backup = pendingBackup ?: return@task
-        stopCurrent(); library.restore(backup); pendingBackup = null; screen = "library"
+        stopCurrent(); library.restore(backup)
+        theme = backup.preferences.theme; skipBack = backup.preferences.skipBack; skipForward = backup.preferences.skipForward
+        pendingBackup = null; screen = "library"
         message = "Libreria ripristinata. Ricollega i file dalla scheda di ciascun libro."
     }
     fun checkUpdate() = task("Controllo aggiornamenti…") {

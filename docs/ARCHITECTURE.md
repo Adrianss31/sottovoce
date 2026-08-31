@@ -1,0 +1,31 @@
+# Architettura della prima versione
+
+App nativa Kotlin, Jetpack Compose Material 3. Un’unica Activity conserva il ViewModel durante i cambiamenti di configurazione. Il servizio Media3 gestisce audio e sessione indipendentemente dallo schermo aperto.
+
+## Dati locali
+
+SQLiteOpenHelper, database `library.db`, schema 1, WAL e transazioni per importazione e ripristino. Le entità serializzate JSON consentono di aggiungere campi con valori predefiniti. Modifiche allo schema SQL richiederanno una migrazione esplicita: non esiste cancellazione automatica del database in caso di errore di versione.
+
+Book contiene metadati, tracce ordinate, posizione, velocità, completamento e stato di collegamento. I segnalibri sono associati al libro con chiave esterna. UPDATE conserva i segnalibri; non viene usato REPLACE sui libri. Copie audio in `files/books/<id>/`; gli originali content:// sono letti tramite permessi espliciti del selettore di Android. Non si richiede MANAGE_EXTERNAL_STORAGE.
+
+L’importazione di copie usa file intermedi, controllo dimensione e sincronizzazione prima di registrare il libro. Una cancellazione non deve eliminare copie già registrate nel database. In caso di arresto forzato durante la copia possono rimanere file incompleti privati: una gestione automatica degli orfani è un miglioramento futuro.
+
+Il backup esportato elimina URI e percorsi, conservando metadati e dati di ascolto. Il ripristino valida formato, quantità, indici, identificatori e velocità, e richiede una nuova selezione esplicita degli audio. Prima di sostituire i dati conserva `files/before-restore.json` nello spazio privato. L’interfaccia di recupero di questa copia non è ancora disponibile. Le vecchie copie audio non sono eliminate dal ripristino; possono occupare spazio fino alla pulizia/disinstallazione. Non disinstallare prima di recuperare gli audio che non possiedi altrove.
+
+## Riproduzione
+
+ExoPlayer e MediaSessionService, audio focus con contenuto parlato, wake lock locale, notifica di sistema e gestione dello scollegamento delle cuffie. Il servizio salva periodicamente la posizione (circa ogni 3 secondi) e agli eventi principali; un arresto improvviso può far perdere gli ultimissimi secondi. Velocità conservata per libro.
+
+Le richieste esterne non possono fornire URL arbitrari al servizio: gli elementi della sessione vengono risolti per identificatore nella libreria locale. Si accettano controller dell’app e controller considerati affidabili dal sistema. I comandi per fermare/salvare e impostare il timer sono riservati all’app stessa.
+
+Il parser dei capitoli M4B legge box Nero chpl con limiti di dimensione, profondità e conteggio. In caso di metadati sconosciuti o malformati torna alla singola traccia. Riferimento del formato: [demuxer MOV di FFmpeg](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mov.c), funzione mov_read_chpl. Non include codice o librerie FFmpeg.
+
+## Aggiornamenti
+
+L’utente richiede il controllo; non ci sono download automatici in background. Il descrittore pubblico `update.json` contiene un payload Base64 e una firma RSA/SHA-256. La chiave pubblica è incorporata nell’app. Il payload indica versione, codice crescente, Android minimo, URL, dimensione, SHA-256 e note.
+
+La rete ammette esclusivamente HTTPS e gli host GitHub previsti per repository e release assets. L’URL APK firmato deve appartenere alle release di questo repository. Prima dell’installazione si verificano dimensione, checksum, nome del pacchetto, versione e certificato di firma uguale all’app installata. Android svolge a sua volta la verifica crittografica del pacchetto. FileProvider espone soltanto la cartella privata di cache per gli aggiornamenti.
+
+Le chiavi private non sono incluse in Git, nelle Actions o nell’APK. La firma del pacchetto è stabile tra le release: perderla impedisce di aggiornare installazioni esistenti mantenendo l’identità dell’app. Anche la chiave di firma del descrittore va custodita e copiata in un luogo sicuro. Il modello attuale non implementa la rotazione automatica delle chiavi.
+
+Questo meccanismo distribuisce un nuovo APK: non modifica di nascosto il codice installato e non evita la conferma richiesta da Android. È pensato per distribuzione diretta, non per una pubblicazione su Google Play senza ulteriori adattamenti alle sue regole.

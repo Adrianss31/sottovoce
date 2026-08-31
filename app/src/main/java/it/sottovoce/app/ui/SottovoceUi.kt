@@ -193,7 +193,7 @@ private val DarkColors = darkColorScheme(primary = Color(0xFFB1D2A5), onPrimary 
     val filtered = books.filter { b ->
         (b.title+" "+b.author+" "+b.narrator).contains(search, ignoreCase = true) && when (filter) {
             "In ascolto" -> b.lastPlayedAt > 0 && !b.completed
-            "Da iniziare" -> b.lastPlayedAt == 0 && !b.completed
+            "Da iniziare" -> b.lastPlayedAt == 0L && !b.completed
             "Completati" -> b.completed
             else -> true
         }
@@ -378,7 +378,7 @@ private fun chapters(book: Book): List<ChapterRow> = book.tracks.flatMapIndexed 
         item {Text("Impostazioni",style=MaterialTheme.typography.headlineLarge)}
         item {SettingRow("Aspetto",when(vm.theme){"dark"->"Scuro";"light"->"Chiaro";else->"Come il sistema"},Icons.Default.Palette,onTheme)}
         item {SettingRow("Salti del lettore","Indietro ${vm.skipBack} s · avanti ${vm.skipForward} s",Icons.Default.Replay,onSkips)}
-        item {Text("Backup locale",style=MaterialTheme.typography.titleLarge);Text("Salva libreria, progressi e segnalibri. Gli audio vanno conservati separatamente.",style=MaterialTheme.typography.bodyMedium)}
+        item {Text("Backup locale",style=MaterialTheme.typography.titleLarge);Text("Salva libreria, progressi, segnalibri e preferenze. Gli audio vanno conservati separatamente.",style=MaterialTheme.typography.bodyMedium)}
         item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick=onBackup,modifier=Modifier.weight(1f)){Text("Esporta")};OutlinedButton(onClick=onRestore,modifier=Modifier.weight(1f)){Text("Ripristina")}}}
         item {Text("Spazio gestito: ${storage/1024/1024} MB",style=MaterialTheme.typography.titleMedium);Text("Copie audio e copertine. Per eliminare una copia apri la scheda del libro: gli originali restano intatti.",style=MaterialTheme.typography.bodySmall)}
         item {Card(colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)){Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {

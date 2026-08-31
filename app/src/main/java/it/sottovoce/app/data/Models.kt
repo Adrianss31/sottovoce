@@ -40,15 +40,20 @@ val AppJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     val trackIndex: Int, val positionMs: Long, val note: String = "",
     val createdAt: Long = System.currentTimeMillis(),
 )
+@Serializable data class Preferences(val theme: String = "system", val skipBack: Int = 15, val skipForward: Int = 30)
+
 @Serializable data class Backup(
     val format: String = "sottovoce", val version: Int = 1,
     val createdAt: Long = System.currentTimeMillis(),
     val books: List<Book>, val bookmarks: List<Bookmark>,
+    val preferences: Preferences = Preferences(),
 )
 
 fun validateBackup(backup: Backup): Backup {
     require(backup.format == "sottovoce" && backup.version == 1) { "Formato di backup non supportato." }
     require(backup.books.size <= 2000 && backup.bookmarks.size <= 50_000) { "Backup troppo grande." }
+    require(backup.preferences.theme in setOf("system", "light", "dark"))
+    require(backup.preferences.skipBack in 5..120 && backup.preferences.skipForward in 5..120)
     val ids = backup.books.map { it.id }
     require(ids.distinct().size == ids.size) { "Il backup contiene libri duplicati." }
     backup.books.forEach { b ->

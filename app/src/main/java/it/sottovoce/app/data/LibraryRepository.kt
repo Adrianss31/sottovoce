@@ -93,10 +93,14 @@ class LibraryRepository(private val context: Context) {
             else -> false
         }
     }
+    private fun preferences(): Preferences {
+        val prefs = context.getSharedPreferences("preferences", Context.MODE_PRIVATE)
+        return Preferences(prefs.getString("theme", "system") ?: "system", prefs.getInt("skipBack", 15), prefs.getInt("skipForward", 30))
+    }
     suspend fun exportBackup(): Backup = withContext(Dispatchers.IO) { mutex.withLock {
         Backup(books = _books.value.map { b ->
             b.copy(coverPath = null, needsRelink = true, tracks = b.tracks.map { it.copy(uri = "", owned = false) })
-        }, bookmarks = _bookmarks.value)
+        }, bookmarks = _bookmarks.value, preferences = preferences())
     } }
     suspend fun restore(backup: Backup) = withContext(Dispatchers.IO) { mutex.withLock {
         val safe = validateBackup(backup)
@@ -105,7 +109,7 @@ class LibraryRepository(private val context: Context) {
         val atomic = android.util.AtomicFile(recovery)
         val stream = atomic.startWrite()
         try {
-            stream.write(AppJson.encodeToString(Backup(books = _books.value, bookmarks = _bookmarks.value)).toByteArray())
+            stream.write(AppJson.encodeToString(Backup(books = _books.value, bookmarks = _bookmarks.value, preferences = preferences())).toByteArray())
             atomic.finishWrite(stream)
         } catch (e: Exception) { atomic.failWrite(stream); throw e }
         val database = db.writableDatabase
@@ -118,6 +122,9 @@ class LibraryRepository(private val context: Context) {
             }) }
             database.setTransactionSuccessful()
         } finally { database.endTransaction() }
+        context.getSharedPreferences("preferences", Context.MODE_PRIVATE).edit()
+            .putString("theme", safe.preferences.theme).putInt("skipBack", safe.preferences.skipBack)
+            .putInt("skipForward", safe.preferences.skipForward).commit()
         refresh()
     } }
 }
