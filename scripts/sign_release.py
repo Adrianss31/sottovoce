@@ -49,7 +49,7 @@ def main():
     if apk.exists() or (args.output/'update.json').exists():
         parser.error('Use an empty output directory; existing releases are never overwritten.')
     run([args.apksigner, 'sign', '--v4-signing-enabled', 'false', '--ks', args.keystore, '--ks-key-alias', args.alias,
-         '--ks-pass', f'file:{args.password_file.resolve()}', '--key-pass', f'file:{args.password_file.resolve()}',
+         '--ks-pass', f'file:{args.password_file.resolve()}',
          '--out', apk, args.apk])
     verification = run([args.apksigner, 'verify', '--verbose', '--print-certs', apk])
     (args.output/'apk-verification.txt').write_bytes(verification)

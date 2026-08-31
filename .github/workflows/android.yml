@@ -64,7 +64,6 @@ jobs:
           disable-animations: true
           script: |
             ./gradlew connectedDebugAndroidTest --no-daemon
-            adb pull /sdcard/Android/data/it.sottovoce.app.debug/files/screenshots app/build/screenshots
       - name: Conserva risultati e schermate
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -73,5 +72,5 @@ jobs:
           path: |
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
-            app/build/screenshots/
+            app/build/outputs/connected_android_test_additional_output/
           retention-days: 30
