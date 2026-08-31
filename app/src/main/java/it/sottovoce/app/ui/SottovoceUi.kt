@@ -111,6 +111,7 @@ private val DarkColors = darkColorScheme(primary = Color(0xFFB1D2A5), onPrimary 
     LaunchedEffect(vm.message) { vm.message?.let { snackbar.showSnackbar(it, duration = SnackbarDuration.Long); vm.message = null } }
     MaterialTheme(colorScheme = if (dark) DarkColors else LightColors) {
         Scaffold(
+            modifier = Modifier.testTag("app_scaffold"),
             containerColor = MaterialTheme.colorScheme.background,
             topBar = {
                 TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -260,8 +261,10 @@ private val DarkColors = darkColorScheme(primary = Color(0xFFB1D2A5), onPrimary 
         value = withContext(Dispatchers.IO) { runCatching { book.coverPath?.let { BitmapFactory.decodeFile(it)?.asImageBitmap() } }.getOrNull() }
     }
     val colors = listOf(Color(0xFFE3B786), Color(0xFFB4C8CE), Color(0xFFD6B0A3))
-    Box(modifier.aspectRatio(.75f).clip(RoundedCornerShape(topStart = 5.dp, topEnd = 12.dp, bottomEnd = 12.dp, bottomStart = 5.dp)).background(colors[(book.title.hashCode() and Int.MAX_VALUE)%colors.size])) {
+    BoxWithConstraints(modifier.aspectRatio(.75f).clip(RoundedCornerShape(topStart = 5.dp, topEnd = 12.dp, bottomEnd = 12.dp, bottomStart = 5.dp)).background(colors[(book.title.hashCode() and Int.MAX_VALUE)%colors.size])) {
         if (image != null) Image(requireNotNull(image), "Copertina di ${book.title}", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        else if (maxWidth < 72.dp) Text(book.title.trim().take(1).uppercase(), Modifier.align(Alignment.Center),
+            fontFamily = FontFamily.Serif, fontSize = 25.sp, color = Color(0xFF302C22))
         else Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
             Text(book.title, fontFamily = FontFamily.Serif, fontSize = 13.sp, color = Color(0xFF302C22), maxLines = 5, overflow = TextOverflow.Ellipsis)
             Icon(Icons.Default.Headphones, null, tint = Color(0xFF514632), modifier = Modifier.align(Alignment.End))

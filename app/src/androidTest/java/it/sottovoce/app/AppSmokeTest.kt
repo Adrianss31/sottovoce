@@ -59,7 +59,7 @@ class AppSmokeTest {
         return complete
     }
     private fun screenshot(name:String) {
-        val image=compose.onRoot().captureToImage().asAndroidBitmap()
+        val image=compose.onNodeWithTag("app_scaffold").captureToImage().asAndroidBitmap()
         val output=InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
         val dir=(output?.let{File(it)}?:requireNotNull(context.getExternalFilesDir("screenshots"))).apply{mkdirs()}
         File(dir,"$name.png").outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)}
