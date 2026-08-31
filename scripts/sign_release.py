@@ -30,6 +30,14 @@ def main():
     import re
     if not re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', args.version) or args.code < 1:
         parser.error('Use a numeric x.y.z version and a positive version code.')
+    aapt = args.apksigner.with_name('aapt')
+    metadata = run([aapt, 'dump', 'badging', args.apk]).decode('utf-8')
+    package = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", metadata)
+    sdk = re.search(r"sdkVersion:'([0-9]+)'", metadata)
+    if not package or package.groups() != ('it.sottovoce.app', str(args.code), args.version):
+        parser.error('APK identity or version does not match this release. Do not use a debug APK.')
+    if not sdk or sdk.group(1) != '26':
+        parser.error('Unexpected minimum SDK in the APK. Review compatibility before publishing.')
     root = Path(__file__).resolve().parent.parent
     public = run(['openssl', 'pkey', '-in', args.update_key, '-pubout', '-outform', 'DER'])
     expected = base64.b64decode((root/'config/update-public-key.txt').read_text())
@@ -40,7 +48,7 @@ def main():
     apk = args.output / f'sottovoce-{args.version}.apk'
     if apk.exists() or (args.output/'update.json').exists():
         parser.error('Use an empty output directory; existing releases are never overwritten.')
-    run([args.apksigner, 'sign', '--ks', args.keystore, '--ks-key-alias', args.alias,
+    run([args.apksigner, 'sign', '--v4-signing-enabled', 'false', '--ks', args.keystore, '--ks-key-alias', args.alias,
          '--ks-pass', f'file:{args.password_file.resolve()}', '--key-pass', f'file:{args.password_file.resolve()}',
          '--out', apk, args.apk])
     verification = run([args.apksigner, 'verify', '--verbose', '--print-certs', apk])

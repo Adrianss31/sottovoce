@@ -18,7 +18,7 @@ python3 scripts/sign_release.py \
   --output /percorso/release-0.1.0
 ```
 
-Lo script controlla la corrispondenza della chiave pubblica, firma e verifica l’APK, calcola il checksum, firma il descrittore e verifica anche questa firma. I numeri passati allo script **devono corrispondere all’APK compilato**; controllali con `aapt dump badging` o APK Analyzer. Lo script non modifica il codice dell’APK.
+Lo script verifica con aapt identità, versione e Android minimo dell’APK, controlla la corrispondenza della chiave pubblica, firma e verifica l’APK, calcola il checksum, firma il descrittore e verifica anche questa firma. I numeri passati allo script **devono corrispondere all’APK compilato**; lo script li verifica con `aapt dump badging` (aapt deve trovarsi nella stessa cartella di apksigner). Lo script non modifica il codice dell’APK.
 
 4. Crea una release in bozza con tag `v0.1.0` sul commit effettivamente verificato. Allega `sottovoce-0.1.0.apk`, `update.json` e `SHA256SUMS`.
 5. Dopo la verifica, pubblicala come release normale, non prerelease: il controllo integrato usa `releases/latest/download/update.json`, che non seleziona prerelease.

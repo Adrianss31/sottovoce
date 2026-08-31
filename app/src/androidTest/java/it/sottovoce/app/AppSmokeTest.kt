@@ -39,7 +39,7 @@ class AppSmokeTest {
         compose.runOnIdle{future=vm.controller?.sendCustomCommand(SessionCommand("it.sottovoce.STOP_AND_SAVE",Bundle.EMPTY),Bundle.EMPTY)}
         future?.get(10,TimeUnit.SECONDS)
         runBlocking {app.library.load();app.library.books.value.toList().forEach{app.library.removeBook(it.id)}}
-        compose.runOnIdle{vm.screen="library";vm.message=null}
+        compose.runOnIdle{vm.screen="library";vm.message=null;vm.changeTheme("light");vm.setSkips(15,30)}
     }
     private fun wav():ByteArray {
         val samples=16_000*30

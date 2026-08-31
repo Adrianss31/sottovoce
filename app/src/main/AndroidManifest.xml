@@ -9,6 +9,8 @@
     <application
         android:name=".SottovoceApp"
         android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="Sottovoce"
         android:icon="@drawable/ic_launcher"
         android:roundIcon="@drawable/ic_launcher"
