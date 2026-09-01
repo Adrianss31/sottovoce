@@ -190,12 +190,16 @@ private val SottovoceTypography = Typography(
                                     (fadeOut(tween(180)) + slideOutHorizontally(tween(360)) { -it / 3 })
                         }.using(SizeTransform(clip = false))
                     }, label = "navigazione contestuale") { screen -> when (screen) {
-                    "library" -> LibraryScreen(books, last, vm.now.bookId, vm.now.playing, vm,
+                    "library" -> LibraryScreen(books, last, vm.now.bookId, vm.now.playing, vm, vm.stats,
                         onImport = { vm.relinkId = null; dialog = "import" },
                         onBook = { vm.selectedId = it.id; vm.screen = "detail" }, onPlay = { play(it) },
                         onSeries = vm::openSeries, onStats = vm::openStats)
-                    "series" -> vm.selectedSeries?.let { name -> SeriesScreen(name, books.filter { it.series == name }, vm, vm.now.bookId, vm.now.playing,
-                        onBook = { vm.selectedId = it.id; vm.screen = "detail" }) }
+                    "series" -> vm.selectedSeries?.let { key ->
+                        val seriesBooks = books.filter { seriesKey(it.series) == seriesKey(key) }
+                        val name = seriesBooks.firstOrNull()?.series?.trim()?.replace(Regex("\\s+"), " ") ?: key
+                        SeriesScreen(name, seriesBooks, vm, vm.now.bookId, vm.now.playing,
+                            onBook = { vm.selectedId = it.id; vm.screen = "detail" })
+                    }
                     "stats" -> StatsScreen(vm.stats)
                     "detail" -> if (book != null) DetailScreen(book, bookmarks.filter { it.bookId == book.id }, vm.now.bookId == book.id, vm, timer,
                         onPlay = { index, position -> play(book, index, position) }, onEdit = { dialog = "edit" },
@@ -266,7 +270,7 @@ private val SottovoceTypography = Typography(
 }
 
 @UnstableApi
-@Composable private fun LibraryScreen(books: List<Book>, last: Book?, activeId: String?, playing: Boolean, vm: LibraryViewModel,
+@Composable private fun LibraryScreen(books: List<Book>, last: Book?, activeId: String?, playing: Boolean, vm: LibraryViewModel, stats: ListeningStats?,
     onImport: () -> Unit, onBook: (Book) -> Unit, onPlay: (Book) -> Unit, onSeries: (String) -> Unit, onStats: () -> Unit) {
     var search by rememberSaveable { mutableStateOf("") }
     var filter by rememberSaveable { mutableStateOf("Tutti") }
@@ -285,8 +289,7 @@ private val SottovoceTypography = Typography(
         else if (sort == "Serie") it.sortedWith(compareBy<Book> { it.series.isBlank() }.thenBy { it.series.lowercase() }
             .thenBy { it.seriesPosition ?: Int.MAX_VALUE }.thenComparator { a, b -> NaturalOrder.compare(a.title, b.title) })
         else it.sortedByDescending { b -> b.lastPlayedAt.coerceAtLeast(b.createdAt) } }
-    val seriesCount = filtered.filter { it.series.isNotBlank() }.map { it.series }.toSet().size
-    val grouped = search.isBlank()
+    val seriesCount = filtered.filter { it.series.isNotBlank() }.map { seriesKey(it.series) }.toSet().size
     LazyVerticalGrid(columns = GridCells.Adaptive(156.dp), modifier = Modifier.fillMaxSize().testTag("library"),
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 32.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(30.dp)) {
@@ -301,6 +304,9 @@ private val SottovoceTypography = Typography(
                 onToggle = { if (activeId == last.id) vm.togglePlay() else onPlay(last) },
                 onForward = { if (activeId == last.id) vm.skip(vm.skipForward) else onPlay(last) })
         }
+        if (stats != null && books.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
+            ListeningSummaryCard(stats, onStats)
+        }
         if (books.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Icon(Icons.Default.LibraryBooks, null, Modifier.size(40.dp))
@@ -311,10 +317,9 @@ private val SottovoceTypography = Typography(
         } } else {
             item(span = { GridItemSpan(maxLineSpan) }) { Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Text("Tutti i libri", style = MaterialTheme.typography.headlineSmall)
-                    Text("${filtered.size} ${if (filtered.size == 1) "titolo" else "titoli"}${if (grouped && seriesCount > 0) " · $seriesCount serie" else ""}",
+                    Text("${filtered.size} ${if (filtered.size == 1) "titolo" else "titoli"}${if (seriesCount > 0) " · $seriesCount serie" else ""}",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 TextButton(onClick = onImport) { Icon(Icons.Default.Add, null); Text("Aggiungi") }
-                IconButton(onClick = onStats) { Icon(Icons.Default.Insights, "Statistiche di ascolto") }
                 IconButton(onClick = { searchOpen = !searchOpen }) { Icon(Icons.Default.Search, if (searchOpen) "Chiudi ricerca" else "Cerca libri") }
                 IconButton(onClick = { vm.changeLibraryViewMode(if (vm.libraryViewMode == "grid") "compact" else "grid") }) {
                     Icon(if (vm.libraryViewMode == "grid") Icons.Default.ViewAgenda else Icons.Default.GridView,
@@ -328,19 +333,27 @@ private val SottovoceTypography = Typography(
                 placeholder = { Text("Titolo, autore, narratore o serie") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true, shape = SottovoceDesign.Soft) }
             item(span = { GridItemSpan(maxLineSpan) }) { LibraryFilterBar(filter) { filter = it } }
             if (filtered.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyMessage("Nessun libro corrisponde alla ricerca.") }
-            else if (grouped) groupForLibrary(filtered).forEach { entry ->
-                when (entry) {
-                    is LibraryEntry.SeriesGroup -> item(key = "series:${entry.name}", span = { GridItemSpan(maxLineSpan) }) {
-                        SeriesCard(entry.name, entry.books) { onSeries(entry.name) }
+            else {
+                val entries = groupForLibrary(filtered, books)
+                val seriesEntries = entries.filterIsInstance<LibraryEntry.SeriesGroup>()
+                val singleEntries = entries.filterIsInstance<LibraryEntry.Single>()
+                if (seriesEntries.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) { LibrarySectionTitle("Serie", "Tocca una serie per vedere tutti i volumi") }
+                    seriesEntries.forEach { entry ->
+                        item(key = "series:${entry.key}", span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) {
+                            SeriesCard(entry.name, entry.books, entry.totalCount, vm.libraryViewMode == "compact", activeId, playing) { onSeries(entry.key) }
+                        }
                     }
-                    is LibraryEntry.Single -> { val b = entry.book
+                }
+                if (singleEntries.isNotEmpty()) {
+                    item(span = { GridItemSpan(maxLineSpan) }) { LibrarySectionTitle(if (seriesEntries.isEmpty()) "Libri" else "Altri libri", null) }
+                    singleEntries.forEach { entry ->
+                        val b = entry.book
                         item(key = b.id, span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) {
                             LibraryBookItem(b, vm.libraryViewMode, activeId == b.id, playing && activeId == b.id) { onBook(b) }
                         }
                     }
                 }
-            } else gridItems(filtered, key = { it.id }, span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) { b ->
-                LibraryBookItem(b, vm.libraryViewMode, activeId == b.id, playing && activeId == b.id) { onBook(b) }
             }
         }
     }
@@ -479,33 +492,95 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
         }
     }
 }
-@Composable private fun SeriesCard(name: String, entries: List<Book>, onOpen: () -> Unit) {
-    val first = entries.firstOrNull() ?: return
-    val completed = entries.count { it.completed }
+@Composable private fun LibrarySectionTitle(title: String, subtitle: String?) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
+}
+
+@Composable private fun ListeningSummaryCard(stats: ListeningStats, onOpen: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) .985f else 1f, spring(stiffness = Spring.StiffnessMediumLow), label = "pressione serie")
+    val scale by animateFloatAsState(if (pressed) .985f else 1f, spring(stiffness = Spring.StiffnessMediumLow), label = "pressione statistiche")
+    Surface(Modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale }
+        .clickable(interactionSource = interaction, indication = null, onClick = onOpen),
+        shape = SottovoceDesign.Card, color = MaterialTheme.colorScheme.secondaryContainer, shadowElevation = 1.dp) {
+        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = .12f)) {
+                    Icon(Icons.Default.Insights, null, Modifier.padding(9.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("Il tuo ascolto", style = MaterialTheme.typography.titleMedium)
+                    Text(if (stats.weekMs > 0) "Questa settimana" else "Inizia a raccogliere i tuoi dati",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("Vedi tutto", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatBlock("Settimana", humanDuration(stats.weekMs), Modifier.weight(1f))
+                StatBlock("Oggi", humanDuration(stats.todayMs), Modifier.weight(1f))
+                StatBlock("Giorni attivi", "${stats.activeDaysLast7}/7", Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+@Composable private fun SeriesCard(name: String, entries: List<Book>, totalCount: Int, compact: Boolean, activeId: String?, playing: Boolean, onOpen: () -> Unit) {
+    if (entries.isEmpty()) return
+    val totalDuration = entries.sumOf { it.durationMs.coerceAtLeast(0) }
+    val played = entries.sumOf { if (it.completed) it.durationMs.coerceAtLeast(0) else it.playedMs.coerceIn(0, it.durationMs.coerceAtLeast(0)) }
+    val progress = if (totalDuration > 0) (played.toFloat() / totalDuration).coerceIn(0f, 1f) else if (entries.all { it.completed }) 1f else 0f
+    val current = entries.firstOrNull { it.id == activeId } ?: entries.firstOrNull { !it.completed && it.lastPlayedAt > 0 } ?: entries.firstOrNull { !it.completed }
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .975f else 1f, spring(stiffness = Spring.StiffnessMediumLow), label = "pressione serie")
     Surface(Modifier.fillMaxWidth().testTag("series_card_$name").graphicsLayer { scaleX = scale; scaleY = scale }
         .clickable(interactionSource = interaction, indication = null, onClick = onOpen),
-        shape = SottovoceDesign.Card, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .7f), shadowElevation = 1.dp) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Box {
-                Cover(first, Modifier.width(72.dp))
-                Surface(Modifier.align(Alignment.BottomEnd).padding(5.dp), shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary) {
-                    Text("${entries.size}", Modifier.padding(horizontal = 7.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
-                }
+        shape = SottovoceDesign.Soft, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f), shadowElevation = 1.dp) {
+        if (compact) {
+            Row(Modifier.padding(11.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                SeriesMosaic(entries, Modifier.width(82.dp))
+                SeriesCardInfo(name, entries, totalCount, progress, current, playing && current?.id == activeId, Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight, "Apri la serie", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.CollectionsBookmark, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
-                    Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                }
-                Text(if (completed == entries.size) "Serie completata" else "$completed di ${entries.size} completati",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                LinearProgressIndicator(progress = { completed.toFloat() / entries.size },
-                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape))
+        } else {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                SeriesMosaic(entries, Modifier.fillMaxWidth())
+                SeriesCardInfo(name, entries, totalCount, progress, current, playing && current?.id == activeId, Modifier.fillMaxWidth())
             }
-            Icon(Icons.Default.ChevronRight, "Apri la serie", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable private fun SeriesCardInfo(name: String, entries: List<Book>, totalCount: Int, progress: Float, current: Book?, isPlaying: Boolean, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+        Text(name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        val countLabel = if (entries.size == totalCount) "$totalCount ${if (totalCount == 1) "libro" else "libri"}" else "${entries.size} di $totalCount volumi"
+        Text("$countLabel · ${"%.0f".format(progress * 100)}% completato",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        current?.let { Text(if (isPlaying) "In ascolto · ${it.title}" else "Prossimo · ${it.title}",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth().height(4.dp).clip(CircleShape))
+    }
+}
+
+@Composable private fun SeriesMosaic(entries: List<Book>, modifier: Modifier) {
+    val shown = entries.take(4)
+    Box(modifier.aspectRatio(1.52f).clip(SottovoceDesign.Cover).background(MaterialTheme.colorScheme.surface)) {
+        if (shown.size <= 2) Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+            shown.forEach { Cover(it, Modifier.weight(1f).fillMaxHeight()) }
+        } else Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                shown.take(2).forEach { Cover(it, Modifier.weight(1f).fillMaxHeight()) }
+            }
+            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                shown.drop(2).take(2).forEach { Cover(it, Modifier.weight(1f).fillMaxHeight()) }
+            }
+        }
+        if (entries.size > 4) Surface(Modifier.align(Alignment.BottomEnd).padding(6.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+            Text("+${entries.size - 4}", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary)
         }
     }
 }
@@ -513,6 +588,9 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
 @Composable private fun SeriesScreen(name: String, entries: List<Book>, vm: LibraryViewModel, activeId: String?, playing: Boolean, onBook: (Book) -> Unit) {
     val sorted = entries.sortedWith(compareBy<Book> { it.seriesPosition ?: Int.MAX_VALUE }
         .thenComparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+    val totalDuration = entries.sumOf { it.durationMs.coerceAtLeast(0) }
+    val played = entries.sumOf { if (it.completed) it.durationMs.coerceAtLeast(0) else it.playedMs.coerceIn(0, it.durationMs.coerceAtLeast(0)) }
+    val progress = if (totalDuration > 0) (played.toFloat() / totalDuration).coerceIn(0f, 1f) else 0f
     LazyVerticalGrid(columns = GridCells.Adaptive(156.dp), modifier = Modifier.fillMaxSize().testTag("series_view"),
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 32.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp), verticalArrangement = Arrangement.spacedBy(30.dp)) {
@@ -521,7 +599,8 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
                 Icon(Icons.Default.CollectionsBookmark, null, tint = MaterialTheme.colorScheme.primary)
                 Text(name, style = MaterialTheme.typography.headlineMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            Text("${entries.size} ${if (entries.size == 1) "libro" else "libri"} · ${entries.count { it.completed }} completati", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${entries.size} ${if (entries.size == 1) "libro" else "libri"} · ${entries.count { it.completed }} completati · ${"%.0f".format(progress * 100)}% completato", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            LinearProgressIndicator(progress = { progress }, Modifier.fillMaxWidth().height(5.dp).clip(CircleShape))
         } }
         if (entries.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyMessage("Nessun libro in questa serie.") }
         else gridItems(sorted, key = { it.id }, span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) { b ->
@@ -566,27 +645,43 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
 }
 @Composable private fun StatsScreen(stats: ListeningStats?) {
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        item { Text("Statistiche", style = MaterialTheme.typography.headlineLarge) }
+        item { Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text("Il tuo ascolto", style = MaterialTheme.typography.headlineLarge)
+            Text("Tutto resta sul dispositivo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } }
         val s = stats
         if (s == null) item {}
         else if (s.totalMs == 0L && s.completedBooks == 0) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Default.Insights, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
-                Text("Nessuna statistica ancora", style = MaterialTheme.typography.titleMedium)
-                Text("I dati iniziano a raccogliersi localmente mentre ascolti: tempo, completamenti e serie concluse non lasciano mai il dispositivo.",
+                Text("Inizia ad ascoltare", style = MaterialTheme.typography.titleMedium)
+                Text("Qui vedrai il tempo ascoltato, i giorni attivi e i libri che stai portando avanti. I dati non lasciano mai il dispositivo.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } } else {
-            item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatBlock("Totale ascoltato", humanDuration(s.totalMs), Modifier.weight(1f))
-                StatBlock("Questo mese", humanDuration(s.thisMonthMs), Modifier.weight(1f))
+            item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Questa settimana", style = MaterialTheme.typography.titleMedium)
+                    Text(humanDuration(s.weekMs), style = MaterialTheme.typography.displaySmall)
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        StatBlock("Oggi", humanDuration(s.todayMs), Modifier.weight(1f))
+                        StatBlock("Giorni attivi", "${s.activeDaysLast7}/7", Modifier.weight(1f))
+                        StatBlock("Continuità", if (s.currentStreak > 0) "${s.currentStreak} giorni" else "—", Modifier.weight(1f))
+                    }
+                }
             } }
             item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { MonthlyBars(s.months) }
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { DailyBars(s.days) }
+            } }
+            item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Andamento mensile", style = MaterialTheme.typography.titleMedium)
+                    MonthlyBars(s.months)
+                }
             } }
             item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                 Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Completamenti", style = MaterialTheme.typography.titleMedium)
+                    Text("Avanzamento libreria", style = MaterialTheme.typography.titleMedium)
                     ProgressLine("Libri completati", s.completedBooks, s.totalBooks)
                     if (s.totalSeries > 0) ProgressLine("Serie completate", s.completedSeries, s.totalSeries)
                 }
@@ -600,7 +695,10 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
                     } }
                 }
             } }
-            item { Text("Le statistiche restano sul dispositivo e non vengono incluse nel backup.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Totale registrato: ${humanDuration(s.totalMs)} · questo mese: ${humanDuration(s.thisMonthMs)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Il tempo viene conteggiato da quando questa funzione è stata attivata e non viene incluso nei backup.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } }
         }
     }
 }
@@ -625,6 +723,24 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
                     Spacer(Modifier.height(5.dp))
                     Text(m.label, style = MaterialTheme.typography.labelSmall)
                     Text(if (m.durationMs > 0) shortDuration(m.durationMs) else "—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun DailyBars(days: List<DayStat>) {
+    val max = days.maxOfOrNull { it.durationMs }?.coerceAtLeast(1L) ?: 1L
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Ultimi 7 giorni", style = MaterialTheme.typography.titleMedium)
+        Row(Modifier.fillMaxWidth().height(130.dp), horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.Bottom) {
+            days.forEach { day ->
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.fillMaxWidth().height((day.durationMs.toFloat() / max * 80).dp.coerceAtLeast(if (day.durationMs > 0) 6.dp else 2.dp))
+                        .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)).background(MaterialTheme.colorScheme.primary))
+                    Spacer(Modifier.height(5.dp))
+                    Text(day.label, style = MaterialTheme.typography.labelSmall)
+                    Text(if (day.durationMs > 0) shortDuration(day.durationMs) else "—", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

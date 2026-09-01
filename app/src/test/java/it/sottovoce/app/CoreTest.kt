@@ -143,6 +143,15 @@ class CoreTest {
         // La serie raggruppata ha una sola occorrenza anche con più libri consecutivi.
         assertEquals(1,entries.count { it is LibraryEntry.SeriesGroup })
     }
+    @Test fun seriesGroupingNormalizesCaseAndWhitespace() {
+        fun book(id:String, series:String)=Book(id=id,title=id,series=series,
+            tracks=listOf(AudioTrack(id="t$id",uri="",name=id)))
+        val entries=groupForLibrary(listOf(book("a", "  Saga   del   Nord  "), book("b", "saga del nord")))
+        assertEquals(1, entries.size)
+        val group=entries.single() as LibraryEntry.SeriesGroup
+        assertEquals("saga del nord", group.key)
+        assertEquals(2, group.books.size)
+    }
     @Test fun listeningStatsAggregateTotalsMonthsAndCompletion() {
         val today=LocalDate.of(2026,9,10)
         fun book(id:String,title:String,series:String="",position:Int?=null,completed:Boolean=false)=Book(id=id,title=title,
@@ -163,5 +172,10 @@ class CoreTest {
         assertEquals("09/26",s.months[5].label); assertEquals(50*60_000L,s.months[5].durationMs)
         assertEquals("08/26",s.months[4].label); assertEquals(60*60_000L,s.months[4].durationMs)
         assertEquals(0L,s.months[3].durationMs)
+        assertEquals(0L, s.todayMs)
+        assertEquals(50*60_000L, s.weekMs)
+        assertEquals(2, s.activeDaysLast7)
+        assertEquals(0, s.currentStreak)
+        assertEquals(7, s.days.size)
     }
 }

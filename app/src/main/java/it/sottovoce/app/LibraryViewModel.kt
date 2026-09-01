@@ -92,9 +92,15 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch {
             try {
                 library.load()
+                refreshStats()
                 controller = controllerFuture.awaitValue()
                 controller?.addListener(object : Player.Listener { override fun onEvents(player: Player, events: Player.Events) { snapshot() } })
-                while (isActive) { snapshot(); delay(500) }
+                var ticks = 0
+                while (isActive) {
+                    snapshot()
+                    if (++ticks % 10 == 0 && now.playing) refreshStats()
+                    delay(500)
+                }
             } catch (e: Exception) { if (e !is CancellationException) message = "Impossibile avviare il lettore: ${e.message}" }
         }
         viewModelScope.launch { PlaybackSignals.error.collect { if (it != null) { message = it; PlaybackSignals.error.value = null } } }
@@ -160,6 +166,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val replacing = relinkId
         if (replacing != null && now.bookId == replacing) stopCurrent()
         val count = importer.commit(candidates, (copyImports || mustCopyImports) && replacing == null, replacing)
+        refreshStats()
         candidates = emptyList(); relinkId = null; screen = "library"
         message = if (replacing != null) "File ricollegati. Progressi e segnalibri conservati." else "$count ${if (count == 1) "libro importato" else "libri importati"}."
     }
@@ -228,11 +235,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             title = title.trim().take(1000), author = author.trim().take(1000), narrator = narrator.trim().take(1000),
             series = series.trim().take(1000), seriesPosition = seriesPosition.takeIf { series.isNotBlank() },
         ) }
+        refreshStats()
     }
-    fun markCompleted(book: Book) = task("Salvataggio…") { library.update(book.id) { it.copy(completed = !it.completed) } }
+    fun markCompleted(book: Book) = task("Salvataggio…") {
+        library.update(book.id) { it.copy(completed = !it.completed) }
+        refreshStats()
+    }
     fun removeBook(book: Book, copiesOnly: Boolean) = task("Rimozione…") {
         if (now.bookId == book.id) stopCurrent()
         if (copiesOnly) library.removeCopies(book.id) else library.removeBook(book.id)
+        refreshStats()
         screen = "library"
     }
     private suspend fun stopCurrent() {
@@ -264,7 +276,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         timerFade = backup.preferences.timerFade
         timerShakeExtend = backup.preferences.timerShakeExtend
         libraryViewMode = backup.preferences.libraryViewMode
-        pendingBackup = null; screen = "library"
+        refreshStats(); pendingBackup = null; screen = "library"
         message = "Libreria ripristinata. Ricollega i file dalla scheda di ciascun libro."
     }
     private suspend fun refreshRelease() {
@@ -328,9 +340,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun openSeries(name: String) { selectedSeries = name; screen = "series" }
     fun openStats() {
         viewModelScope.launch {
-            runCatching { stats = computeStats(library.books.value, library.listeningDays(), java.time.LocalDate.now()) }
+            refreshStats()
             screen = "stats"
         }
+    }
+    private suspend fun refreshStats() {
+        runCatching { stats = computeStats(library.books.value, library.listeningDays(), java.time.LocalDate.now()) }
     }
     override fun onCleared() { MediaController.releaseFuture(controllerFuture); super.onCleared() }
 }

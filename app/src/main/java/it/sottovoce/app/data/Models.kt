@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.LocalDate
 import java.time.YearMonth
+import java.util.Locale
 import java.util.UUID
 
 val AppJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -180,6 +181,8 @@ data class ListeningDay(val bookId: String, val day: Long, val durationMs: Long)
 
 data class MonthStat(val key: String, val label: String, val durationMs: Long)
 
+data class DayStat(val day: Long, val label: String, val durationMs: Long)
+
 data class ListeningStats(
     val totalMs: Long,
     val thisMonthMs: Long,
@@ -189,6 +192,11 @@ data class ListeningStats(
     val completedSeries: Int,
     val totalSeries: Int,
     val topBooks: List<Pair<String, Long>>,
+    val todayMs: Long = 0,
+    val weekMs: Long = 0,
+    val activeDaysLast7: Int = 0,
+    val currentStreak: Int = 0,
+    val days: List<DayStat> = emptyList(),
 )
 
 fun computeStats(books: List<Book>, days: List<ListeningDay>, today: LocalDate): ListeningStats {
@@ -202,30 +210,50 @@ fun computeStats(books: List<Book>, days: List<ListeningDay>, today: LocalDate):
     }
     val totalMs = days.sumOf { it.durationMs }
     val thisMonthMs = byMonth[YearMonth.from(today)]?.sumOf { it.durationMs } ?: 0
-    val series = books.filter { it.series.isNotBlank() }.groupBy { it.series }
+    val daily = (0 until 7).map { offset ->
+        val date = today.minusDays((6 - offset).toLong())
+        val day = date.toEpochDay()
+        DayStat(day, "%02d/%02d".format(date.dayOfMonth, date.monthValue), days.filter { it.day == day }.sumOf { it.durationMs })
+    }
+    val weekMs = daily.sumOf { it.durationMs }
+    val todayMs = daily.lastOrNull()?.durationMs ?: 0
+    val activeDays = daily.count { it.durationMs > 0 }
+    val daySet = days.filter { it.durationMs > 0 }.map { it.day }.toSet()
+    var streak = 0
+    while (daySet.contains(today.minusDays(streak.toLong()).toEpochDay())) streak++
+    val series = books.filter { it.series.isNotBlank() }.groupBy { seriesKey(it.series) }
     val topBooks = days.groupBy { it.bookId }.mapValues { (_, list) -> list.sumOf { it.durationMs } }
         .entries.sortedByDescending { it.value }.take(5)
         .mapNotNull { (id, ms) -> books.firstOrNull { it.id == id }?.let { it.title to ms } }
     return ListeningStats(totalMs, thisMonthMs, months, books.count { it.completed }, books.size,
-        series.count { (_, list) -> list.all { it.completed } }, series.size, topBooks)
+        series.count { (_, list) -> list.all { it.completed } }, series.size, topBooks,
+        todayMs, weekMs, activeDays, streak, daily)
 }
 
 /** Elementi mostrati nella pagina principale: le serie diventano una sola card, i libri senza serie restano singoli. */
 sealed interface LibraryEntry {
     data class Single(val book: Book) : LibraryEntry
-    data class SeriesGroup(val name: String, val books: List<Book>) : LibraryEntry
+    data class SeriesGroup(val name: String, val books: List<Book>, val totalCount: Int = books.size) : LibraryEntry {
+        val key: String get() = seriesKey(name)
+    }
 }
 
-fun groupForLibrary(books: List<Book>): List<LibraryEntry> {
-    val grouped = books.filter { it.series.isNotBlank() }.groupBy { it.series }
+/** Chiave stabile per raggruppare serie scritte con spazi o maiuscole diverse. */
+fun seriesKey(value: String): String = value.trim().replace(Regex("\\s+"), " ").lowercase(Locale.ROOT)
+
+fun groupForLibrary(books: List<Book>, allBooks: List<Book> = books): List<LibraryEntry> {
+    val grouped = books.filter { it.series.isNotBlank() }.groupBy { seriesKey(it.series) }
+    val allGrouped = allBooks.filter { it.series.isNotBlank() }.groupBy { seriesKey(it.series) }
     val used = mutableSetOf<String>()
     return buildList {
         books.forEach { book ->
             if (book.series.isBlank()) add(LibraryEntry.Single(book))
-            else if (used.add(book.series)) {
-                add(LibraryEntry.SeriesGroup(book.series, grouped.getValue(book.series)
-                    .sortedWith(compareBy<Book> { it.seriesPosition ?: Int.MAX_VALUE }
-                        .thenComparator { a, b -> NaturalOrder.compare(a.title, b.title) })))
+            else if (used.add(seriesKey(book.series))) {
+                val key = seriesKey(book.series)
+                val sorted = grouped.getValue(key).sortedWith(compareBy<Book> { it.seriesPosition ?: Int.MAX_VALUE }
+                    .thenComparator { a, b -> NaturalOrder.compare(a.title, b.title) })
+                add(LibraryEntry.SeriesGroup(book.series.trim().replace(Regex("\\s+"), " "), sorted,
+                    allGrouped[key]?.size ?: sorted.size))
             }
         }
     }
