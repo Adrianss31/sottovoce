@@ -6,7 +6,7 @@ L’interfaccia non separa la scheda del libro dal lettore: la stessa destinazio
 
 ## Dati locali
 
-SQLiteOpenHelper, database `library.db`, schema 1, WAL e transazioni per importazione e ripristino. Le entità serializzate JSON consentono di aggiungere campi con valori predefiniti. Modifiche allo schema SQL richiederanno una migrazione esplicita: non esiste cancellazione automatica del database in caso di errore di versione.
+SQLiteOpenHelper, database `library.db`, schema 2, WAL e transazioni per importazione e ripristino. Lo schema 2 aggiunge la tabella `sessions(book_id, day, duration_ms)` per le statistiche di ascolto locali, creata da una migrazione esplicita da schema 1 (i dati esistenti restano intatti). Le entità serializzate JSON consentono di aggiungere campi con valori predefiniti. Modifiche allo schema SQL richiederanno una migrazione esplicita: non esiste cancellazione automatica del database in caso di errore di versione.
 
 Book contiene metadati, serie e posizione nella serie, tracce ordinate, posizione, velocità, completamento e stato di collegamento. I segnalibri sono associati al libro con chiave esterna. UPDATE conserva i segnalibri; non viene usato REPLACE sui libri. Copie audio in `files/books/<id>/`; gli originali content:// sono letti tramite permessi espliciti del selettore di Android. Non si richiede MANAGE_EXTERNAL_STORAGE.
 
@@ -27,6 +27,12 @@ Le richieste esterne non possono fornire URL arbitrari al servizio: gli elementi
 Il parser dei capitoli M4B legge box Nero chpl e tracce di testo QuickTime referenziate da `tref/chap`. Per queste ultime interpreta tempi, dimensioni, mappatura campioni/chunk, offset a 32 o 64 bit e titoli UTF-8/UTF-16, senza caricare l’audiolibro in memoria. Tabelle, campioni e conteggi hanno limiti espliciti; metadati sconosciuti o malformati tornano alla singola traccia. Riferimenti del formato: [Chapter lists di Apple](https://developer.apple.com/documentation/quicktime-file-format/chapter_lists), [Text sample data di Apple](https://developer.apple.com/documentation/quicktime-file-format/text_sample_data) e [demuxer MOV di FFmpeg](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mov.c). Non include codice o librerie FFmpeg.
 
 Dalla versione 0.1.1, al primo avvio vengono riesaminati automaticamente gli M4B importati con il parser precedente. L’operazione aggiorna soltanto i capitoli e conserva posizione, velocità e segnalibri.
+
+## Statistiche e serie
+
+Il tempo di ascolto è misurato come tempo reale trascorso in riproduzione: il servizio accumula l’intervallo dei suoi tick (250 ms) mentre l’audio è in riproduzione e lo registra a ogni salvataggio in `sessions`, una riga per libro e giorno (`duration_ms` cresce con UPDATE; la prima riga del giorno nasce con INSERT). I salti avanti e indietro non contano come ascolto, la velocità di riproduzione non altera il tempo registrato. Le righe sono eliminate dal ripristino del backup (le statistiche non sono esportate) e in cascata quando un libro viene rimosso. La schermata statistiche aggrega le righe per mese (ultimi 6 mesi), totale, mese corrente, completamenti e titoli più ascoltati: calcolo puro, nessun dato lascia il dispositivo.
+
+Nella pagina principale i libri che appartengono a una serie vengono raggruppati in una card unica (copertina del primo titolo, conteggio e progresso della serie); un tocco apre la vista della serie con i suoi libri ordinati per numero. La ricerca testuale mostra di nuovo i singoli libri per trovarli facilmente. Il raggruppamento è una funzione pura (`groupForLibrary`) e non modifica i dati.
 
 ## Aggiornamenti
 

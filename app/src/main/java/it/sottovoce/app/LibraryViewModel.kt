@@ -60,6 +60,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         private set
     var screen by mutableStateOf("library")
     var selectedId by mutableStateOf<String?>(null)
+    var selectedSeries by mutableStateOf<String?>(null)
+    var stats by mutableStateOf<ListeningStats?>(null)
+        private set
     var now by mutableStateOf(NowPlaying())
         private set
     var busy by mutableStateOf<String?>(null)
@@ -321,6 +324,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun changeLibraryViewMode(mode: String) {
         libraryViewMode = mode.takeIf { it in setOf("grid", "compact") } ?: "grid"
         prefs.edit().putString("libraryViewMode", libraryViewMode).apply()
+    }
+    fun openSeries(name: String) { selectedSeries = name; screen = "series" }
+    fun openStats() {
+        viewModelScope.launch {
+            runCatching { stats = computeStats(library.books.value, library.listeningDays(), java.time.LocalDate.now()) }
+            screen = "stats"
+        }
     }
     override fun onCleared() { MediaController.releaseFuture(controllerFuture); super.onCleared() }
 }

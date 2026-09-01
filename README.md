@@ -4,7 +4,7 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato:** versione 0.2.0. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato:** versione 0.3.0. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
@@ -20,7 +20,8 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 - Usa animazioni legate al contesto: il libro e la copertina si espandono dalla libreria, il ritorno scorre indietro e le altre destinazioni scorrono in avanti.
 - Riprende in modo intelligente tornando indietro da 5 a 30 secondi in base alla durata della pausa.
 - Offre timer personalizzati, fine capitolo, dissolvenza, estensione di 10 minuti e attivazione automatica dopo un orario notturno scelto.
-- Organizza i libri per serie e numero, con ordinamento dedicato e visualizzazione alternativa compatta.
+- Organizza i libri per serie e numero, con ordinamento dedicato e vista compatta; nella pagina principale ogni serie appare come una card unica e un tocco mostra i suoi libri.
+- Mostra statistiche di ascolto locali: tempo totale e del mese, ultimi 6 mesi, libri e serie completati, titoli più ascoltati.
 - Include un widget con capitolo e avanzamento e un riquadro dei comandi rapidi Android per play/pausa.
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
@@ -43,7 +44,7 @@ Se sposti o cancelli un originale collegato, ricollegalo dalla scheda del libro.
 
 ## Backup e privacy
 
-Il backup include i dati di ascolto e le preferenze, **non gli audio o le copertine**. Il ripristino sostituisce la libreria corrente dopo conferma. Prima della sostituzione viene mantenuta una copia locale di sicurezza dei dati, e gli audio non vengono cancellati. Per sicurezza il backup non può imporre percorsi di file: dopo il ripristino devi ricollegare gli audio.
+Il backup include i dati di ascolto e le preferenze, **non gli audio, le copertine o le statistiche di ascolto**. Il ripristino sostituisce la libreria corrente dopo conferma e azzera le statistiche. Prima della sostituzione viene mantenuta una copia locale di sicurezza dei dati, e gli audio non vengono cancellati. Per sicurezza il backup non può imporre percorsi di file: dopo il ripristino devi ricollegare gli audio.
 
 Nessuna telemetria, analisi, sincronizzazione cloud o credenziale GitHub nell’app. Un controllo aggiornamenti contatta GitHub, che può vedere i normali dati di connessione, come l’indirizzo IP. Leggi [la progettazione tecnica](docs/ARCHITECTURE.md) per archiviazione, permessi e modello di verifica.
 

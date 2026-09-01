@@ -2,6 +2,8 @@ package it.sottovoce.app.data
 
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import java.time.LocalDate
+import java.time.YearMonth
 import java.util.UUID
 
 val AppJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
@@ -171,4 +173,60 @@ fun timeLabel(milliseconds: Long): String {
     val total = milliseconds.coerceAtLeast(0) / 1000
     return if (total >= 3600) "%d:%02d:%02d".format(total / 3600, total / 60 % 60, total % 60)
     else "%d:%02d".format(total / 60, total % 60)
+}
+
+/** Una riga di ascolto registrata per libro e giorno (epoch day). Le statistiche restano locali. */
+data class ListeningDay(val bookId: String, val day: Long, val durationMs: Long)
+
+data class MonthStat(val key: String, val label: String, val durationMs: Long)
+
+data class ListeningStats(
+    val totalMs: Long,
+    val thisMonthMs: Long,
+    val months: List<MonthStat>,
+    val completedBooks: Int,
+    val totalBooks: Int,
+    val completedSeries: Int,
+    val totalSeries: Int,
+    val topBooks: List<Pair<String, Long>>,
+)
+
+fun computeStats(books: List<Book>, days: List<ListeningDay>, today: LocalDate): ListeningStats {
+    val byMonth = days.groupBy { YearMonth.from(LocalDate.ofEpochDay(it.day)) }
+    val months = (0 until 6).map { offset ->
+        val month = today.minusMonths((5 - offset).toLong()).withDayOfMonth(1)
+        MonthStat("${month.year}-${month.monthValue}", "%02d/%d".format(month.monthValue, month.year % 100), 0)
+    }.map { m ->
+        val ym = YearMonth.of(m.key.substringBefore('-').toInt(), m.key.substringAfter('-').toInt())
+        m.copy(durationMs = byMonth[ym]?.sumOf { it.durationMs } ?: 0)
+    }
+    val totalMs = days.sumOf { it.durationMs }
+    val thisMonthMs = byMonth[YearMonth.from(today)]?.sumOf { it.durationMs } ?: 0
+    val series = books.filter { it.series.isNotBlank() }.groupBy { it.series }
+    val topBooks = days.groupBy { it.bookId }.mapValues { (_, list) -> list.sumOf { it.durationMs } }
+        .entries.sortedByDescending { it.value }.take(5)
+        .mapNotNull { (id, ms) -> books.firstOrNull { it.id == id }?.let { it.title to ms } }
+    return ListeningStats(totalMs, thisMonthMs, months, books.count { it.completed }, books.size,
+        series.count { (_, list) -> list.all { it.completed } }, series.size, topBooks)
+}
+
+/** Elementi mostrati nella pagina principale: le serie diventano una sola card, i libri senza serie restano singoli. */
+sealed interface LibraryEntry {
+    data class Single(val book: Book) : LibraryEntry
+    data class SeriesGroup(val name: String, val books: List<Book>) : LibraryEntry
+}
+
+fun groupForLibrary(books: List<Book>): List<LibraryEntry> {
+    val grouped = books.filter { it.series.isNotBlank() }.groupBy { it.series }
+    val used = mutableSetOf<String>()
+    return buildList {
+        books.forEach { book ->
+            if (book.series.isBlank()) add(LibraryEntry.Single(book))
+            else if (used.add(book.series)) {
+                add(LibraryEntry.SeriesGroup(book.series, grouped.getValue(book.series)
+                    .sortedWith(compareBy<Book> { it.seriesPosition ?: Int.MAX_VALUE }
+                        .thenComparator { a, b -> NaturalOrder.compare(a.title, b.title) })))
+            }
+        }
+    }
 }

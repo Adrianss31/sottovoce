@@ -13,16 +13,21 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import java.io.File
+import java.time.LocalDate
+
+private const val SESSIONS_TABLE = "CREATE TABLE sessions(book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE, day INTEGER NOT NULL, duration_ms INTEGER NOT NULL, PRIMARY KEY(book_id, day))"
 
 class LibraryRepository(private val context: Context) {
-    private val db = object : SQLiteOpenHelper(context, "library.db", null, 1) {
+    private val db = object : SQLiteOpenHelper(context, "library.db", null, 2) {
         override fun onConfigure(db: SQLiteDatabase) { db.setForeignKeyConstraintsEnabled(true) }
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL("CREATE TABLE books(id TEXT PRIMARY KEY, data TEXT NOT NULL)")
             db.execSQL("CREATE TABLE bookmarks(id TEXT PRIMARY KEY, book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE, data TEXT NOT NULL)")
+            db.execSQL(SESSIONS_TABLE)
         }
         override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-            error("Migrazione del database non disponibile: $oldVersion → $newVersion")
+            if (oldVersion == 1 && newVersion == 2) db.execSQL(SESSIONS_TABLE)
+            else error("Migrazione del database non disponibile: $oldVersion → $newVersion")
         }
     }.apply { setWriteAheadLoggingEnabled(true) }
     private val mutex = Mutex()
@@ -93,6 +98,22 @@ class LibraryRepository(private val context: Context) {
             else -> false
         }
     }
+    /** Accumula il tempo di ascolto reale per libro e giorno corrente. Le statistiche restano sul dispositivo. */
+    suspend fun recordListening(bookId: String, deltaMs: Long) = withContext(Dispatchers.IO) { mutex.withLock {
+        if (deltaMs <= 0 || _books.value.none { it.id == bookId }) return@withLock
+        val day = LocalDate.now().toEpochDay()
+        val database = db.writableDatabase
+        database.execSQL("UPDATE sessions SET duration_ms = duration_ms + ? WHERE book_id = ? AND day = ?", arrayOf(deltaMs, bookId, day))
+        val exists = database.rawQuery("SELECT 1 FROM sessions WHERE book_id = ? AND day = ?", arrayOf(bookId, day.toString())).use { it.moveToFirst() }
+        if (!exists) database.insertOrThrow("sessions", null, ContentValues().apply {
+            put("book_id", bookId); put("day", day); put("duration_ms", deltaMs)
+        })
+    } }
+    suspend fun listeningDays(): List<ListeningDay> = withContext(Dispatchers.IO) { mutex.withLock {
+        db.readableDatabase.rawQuery("SELECT book_id, day, duration_ms FROM sessions", null).use { c ->
+            buildList { while (c.moveToNext()) add(ListeningDay(c.getString(0), c.getLong(1), c.getLong(2))) }
+        }
+    } }
     private fun preferences(): Preferences {
         val prefs = context.getSharedPreferences("preferences", Context.MODE_PRIVATE)
         return Preferences(
@@ -126,7 +147,7 @@ class LibraryRepository(private val context: Context) {
         val database = db.writableDatabase
         database.beginTransaction()
         try {
-            database.delete("bookmarks", null, null); database.delete("books", null, null)
+            database.delete("bookmarks", null, null); database.delete("sessions", null, null); database.delete("books", null, null)
             safe.books.forEach(::write)
             safe.bookmarks.forEach { m -> database.insertOrThrow("bookmarks", null, ContentValues().apply {
                 put("id", m.id); put("book_id", m.bookId); put("data", AppJson.encodeToString(m))

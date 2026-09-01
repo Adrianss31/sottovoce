@@ -90,6 +90,9 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
     private var automaticTimer = false
     private var lastShakeAt = 0L
     private lateinit var sensorManager: SensorManager
+    private var listeningBook = ""
+    private var listeningSince = -1L
+    private var listeningAccumulated = 0L
     private val timerCommand = SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND, Bundle.EMPTY)
     private fun timerActive() = deadline > 0 || chapterTrack >= 0
     private fun mediaButtons() = listOf(
@@ -114,9 +117,28 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
                 finishChapterTimer()
             }
             updateTimerPresentation()
+            accumulateListening()
             if (++ticks % 12 == 0 && player.isPlaying) save()
             handler.postDelayed(this, 250)
         }
+    }
+    /** Accumula il tempo reale trascorso in riproduzione per le statistiche locali. */
+    private fun accumulateListening() {
+        if (!::player.isInitialized) return
+        val id = currentBookId()
+        if (player.isPlaying && id != null) {
+            if (id != listeningBook) { flushListening(); listeningBook = id }
+            val now = SystemClock.elapsedRealtime()
+            if (listeningSince >= 0) listeningAccumulated += (now - listeningSince).coerceIn(0, 5_000L)
+            listeningSince = now
+        } else listeningSince = -1L
+    }
+    private fun flushListening() {
+        val bookId = listeningBook
+        val accumulated = listeningAccumulated
+        listeningBook = ""; listeningSince = -1L; listeningAccumulated = 0L
+        if (bookId.isBlank() || accumulated <= 0) return
+        app.scope.launch { runCatching { app.library.recordListening(bookId, accumulated) } }
     }
     override fun onCreate() {
         super.onCreate()
@@ -263,6 +285,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
         val position = (extras.getLong("chapterStartMs", 0) + player.currentPosition).coerceAtLeast(0)
         val speed = player.playbackParameters.speed
         WidgetUpdater.update(this, id, index, position, player.isPlaying)
+        flushListening()
         app.scope.launch { app.library.savePosition(id, index, position, speed, finished) }
     }
     private fun currentBookId(): String? = player.currentMediaItem?.mediaMetadata?.extras?.getString("bookId")

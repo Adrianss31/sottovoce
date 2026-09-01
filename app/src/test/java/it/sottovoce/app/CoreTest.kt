@@ -12,6 +12,7 @@ import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
 import java.security.KeyPairGenerator
 import java.security.Signature
+import java.time.LocalDate
 import java.util.Base64
 
 class CoreTest {
@@ -126,5 +127,41 @@ class CoreTest {
         assertThrows(IllegalArgumentException::class.java){UpdateVerifier.verify(envelope(release.copy(apkUrl="https://example.org/app.apk")),publicKey)}
         assertThrows(IllegalArgumentException::class.java){UpdateVerifier.verify(envelope(release.copy(apkUrl="https://github.com/other/app/releases/download/v1/app.apk")),publicKey)}
         assertThrows(IllegalArgumentException::class.java){UpdateVerifier.verify(envelope(release.copy(size=999_999_999)),publicKey)}
+    }
+    @Test fun seriesAreGroupedUnderOneEntryKeepingOthersSeparate() {
+        fun book(id:String,title:String,series:String="",position:Int?=null)=Book(id=id,title=title,series=series,seriesPosition=position,
+            tracks=listOf(AudioTrack(id="t$id",uri="",name=title)))
+        val first=book("a","Primo","Trilogia",1); val second=book("b","Secondo","Trilogia",2)
+        val third=book("c","Terzo","Trilogia",3); val alone=book("d","Romanzo")
+        val entries=groupForLibrary(listOf(alone,third,first,second))
+        assertEquals(2,entries.size)
+        assertTrue(entries[0] is LibraryEntry.Single)
+        assertEquals(alone,(entries[0] as LibraryEntry.Single).book)
+        val series=entries[1] as LibraryEntry.SeriesGroup
+        assertEquals("Trilogia",series.name)
+        assertEquals(listOf(first,second,third),series.books)
+        // La serie raggruppata ha una sola occorrenza anche con più libri consecutivi.
+        assertEquals(1,entries.count { it is LibraryEntry.SeriesGroup })
+    }
+    @Test fun listeningStatsAggregateTotalsMonthsAndCompletion() {
+        val today=LocalDate.of(2026,9,10)
+        fun book(id:String,title:String,series:String="",position:Int?=null,completed:Boolean=false)=Book(id=id,title=title,
+            series=series,seriesPosition=position,completed=completed,tracks=listOf(AudioTrack(id="t$id",uri="",name=title)))
+        val books=listOf(book("a","Libro A","Saga",1,completed=true),book("b","Libro B","Saga",2,completed=true),book("c","Libro C"))
+        val days=listOf(
+            ListeningDay("a",LocalDate.of(2026,9,3).toEpochDay(),30*60_000L),
+            ListeningDay("a",LocalDate.of(2026,8,20).toEpochDay(),60*60_000L),
+            ListeningDay("b",LocalDate.of(2026,9,5).toEpochDay(),15*60_000L),
+            ListeningDay("missing",LocalDate.of(2026,9,6).toEpochDay(),5*60_000L))
+        val s=computeStats(books,days,today)
+        assertEquals(110*60_000L,s.totalMs)
+        assertEquals(50*60_000L,s.thisMonthMs)
+        assertEquals(2,s.completedBooks); assertEquals(3,s.totalBooks)
+        assertEquals(1,s.completedSeries); assertEquals(1,s.totalSeries)
+        assertEquals(listOf("Libro A" to 90*60_000L,"Libro B" to 15*60_000L),s.topBooks)
+        assertEquals(6,s.months.size)
+        assertEquals("09/26",s.months[5].label); assertEquals(50*60_000L,s.months[5].durationMs)
+        assertEquals("08/26",s.months[4].label); assertEquals(60*60_000L,s.months[4].durationMs)
+        assertEquals(0L,s.months[3].durationMs)
     }
 }
