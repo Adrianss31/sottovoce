@@ -4,7 +4,7 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato:** versione 0.1.1. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato:** versione 0.1.2. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
@@ -14,15 +14,16 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 - Riproduce in sottofondo con controlli nella notifica, gestione del focus audio e pausa quando vengono scollegate le cuffie.
 - Salva posizione e velocità per ciascun libro; offre salti, velocità 0,5–3×, timer e segnalibri con note.
 - Esporta e ripristina un backup JSON di libreria, progressi, segnalibri e preferenze. **Gli audio non sono inclusi.**
-- Controlla gli aggiornamenti da Impostazioni, scarica e verifica l’APK dell’app e apre l’installazione di Android.
+- Controlla automaticamente gli aggiornamenti all’apertura e mostra un banner; un tocco scarica, verifica e apre l’installazione di Android.
+- Mostra avanzamento, durata e tempo residuo del capitolo corrente, mantenendo anche tempi e avanzamento complessivi del libro.
 
-**Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata solo quando richiedi un aggiornamento dell’app. Il collegamento “Codice sorgente” apre il browser esterno.
+**Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
 
 ## Installazione
 
 Android 8.0 o successivo. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases), aprilo sul telefono e autorizza l’installazione per l’app utilizzata per aprirlo, se Android lo richiede. Non occorrono permessi di accesso generale all’archivio: scegli esplicitamente file e cartelle tramite il selettore di Android.
 
-Per i successivi aggiornamenti usa **Impostazioni → Controlla aggiornamenti**. La conferma del sistema non può essere eliminata. Dopo aver autorizzato Sottovoce a installare app, torna all’app e premi di nuovo Installa. Non disinstallare la vecchia versione: perderesti i dati privati e le copie degli audio. Fai un backup prima di aggiornamenti importanti.
+Per i successivi aggiornamenti usa il banner mostrato automaticamente in alto: **Aggiorna** scarica e verifica il pacchetto, poi apre l’installazione. Se è la prima volta, Android chiede di autorizzare Sottovoce come origine; tornando indietro l’app apre automaticamente l’installazione. La conferma finale del sistema non può essere eliminata. Non disinstallare la vecchia versione: perderesti i dati privati e le copie degli audio. Fai un backup prima di aggiornamenti importanti.
 
 La build debug ha un’identità separata (`it.sottovoce.app.debug`) e non viene aggiornata dalle release.
 

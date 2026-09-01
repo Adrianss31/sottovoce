@@ -36,6 +36,50 @@ val AppJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     val playedMs: Long get() = tracks.take(trackIndex).sumOf { it.durationMs } + positionMs
     val progress: Float get() = if (completed) 1f else if (durationMs > 0) (playedMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 }
+
+data class BookChapter(
+    val ordinal: Int,
+    val total: Int,
+    val trackIndex: Int,
+    val title: String,
+    val startMs: Long,
+    val endMs: Long,
+) {
+    val durationMs: Long get() = (endMs - startMs).coerceAtLeast(0)
+    fun elapsedMs(positionMs: Long): Long = (positionMs - startMs).coerceIn(0, durationMs)
+    fun remainingMs(positionMs: Long): Long = (durationMs - elapsedMs(positionMs)).coerceAtLeast(0)
+    fun progress(positionMs: Long): Float = if (durationMs > 0) elapsedMs(positionMs).toFloat() / durationMs else 0f
+}
+
+enum class ChapterStatus { COMPLETED, CURRENT, UPCOMING }
+
+fun Book.chapterTimeline(): List<BookChapter> {
+    val partial = tracks.flatMapIndexed { trackIndex, track ->
+        val points = track.chapters.sortedBy { it.startMs }.ifEmpty { listOf(Chapter(track.name, 0)) }
+        points.mapIndexed { index, chapter ->
+            val end = points.getOrNull(index + 1)?.startMs ?: track.durationMs
+            BookChapter(0, 0, trackIndex, chapter.title.ifBlank { "Capitolo" },
+                chapter.startMs.coerceAtLeast(0), end.coerceAtLeast(chapter.startMs))
+        }
+    }
+    return partial.mapIndexed { index, chapter -> chapter.copy(ordinal = index + 1, total = partial.size) }
+}
+
+fun Book.currentChapter(index: Int = trackIndex, position: Long = positionMs): BookChapter? {
+    val timeline = chapterTimeline()
+    val trackChapters = timeline.filter { it.trackIndex == index }
+    return trackChapters.lastOrNull { it.startMs <= position } ?: trackChapters.firstOrNull() ?: timeline.firstOrNull()
+}
+
+fun Book.chapterStatus(chapter: BookChapter): ChapterStatus {
+    val current = currentChapter()
+    return when {
+        completed -> ChapterStatus.COMPLETED
+        current == null || chapter.ordinal > current.ordinal -> ChapterStatus.UPCOMING
+        chapter.ordinal == current.ordinal -> ChapterStatus.CURRENT
+        else -> ChapterStatus.COMPLETED
+    }
+}
 @Serializable data class Bookmark(
     val id: String = UUID.randomUUID().toString(), val bookId: String,
     val trackIndex: Int, val positionMs: Long, val note: String = "",

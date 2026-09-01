@@ -24,6 +24,17 @@ class CoreTest {
         assertEquals(1f,b.copy(positionMs=999999).progress,0f)
         assertEquals(0f,Book(title="Durata ignota",tracks=listOf(AudioTrack(uri="",name="x"))).progress,0f)
     }
+    @Test fun chapterTimelineReportsCurrentProgressAndCompletion() {
+        val track=AudioTrack(uri="",name="Libro.m4b",durationMs=90_000,chapters=listOf(Chapter("Uno",0),Chapter("Due",30_000)))
+        val book=Book(title="Libro",tracks=listOf(track),positionMs=45_000)
+        val chapters=book.chapterTimeline()
+        assertEquals(2,chapters.size)
+        assertEquals("Due",book.currentChapter()?.title)
+        assertEquals(.25f,book.currentChapter()!!.progress(book.positionMs),.001f)
+        assertEquals(45_000,book.currentChapter()!!.remainingMs(book.positionMs))
+        assertEquals(ChapterStatus.COMPLETED,book.chapterStatus(chapters[0]))
+        assertEquals(ChapterStatus.CURRENT,book.chapterStatus(chapters[1]))
+    }
     @Test fun restoreNeverTrustsPathsFromBackupAndKeepsListeningData() {
         val book=Book(title="Libro",tracks=listOf(AudioTrack(uri="file:///data/private",name="audio",owned=true)),positionMs=12_000,coverPath="/etc/secret")
         val mark=Bookmark(bookId=book.id,trackIndex=0,positionMs=1000,note="Ricorda")

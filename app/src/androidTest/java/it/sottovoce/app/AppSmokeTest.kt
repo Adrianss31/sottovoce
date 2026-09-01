@@ -53,7 +53,8 @@ class AppSmokeTest {
         val book=Book(title="Audiolibro di prova",author="Test automatico",tracks=emptyList())
         val dir=app.library.ownedDirectory(book.id).apply{mkdirs()}
         val file=File(dir,"capitolo.wav").apply{writeBytes(wav())}
-        val complete=book.copy(tracks=listOf(AudioTrack(uri=Uri.fromFile(file).toString(),name="Capitolo 1",durationMs=30_000,size=file.length(),owned=true)))
+        val complete=book.copy(tracks=listOf(AudioTrack(uri=Uri.fromFile(file).toString(),name="file-audio.wav",durationMs=30_000,size=file.length(),owned=true,
+            chapters=listOf(Chapter("Capitolo introduttivo",0),Chapter("Seconda parte",15_000)))))
         runBlocking{app.library.add(listOf(complete))}
         compose.waitUntil(10_000){compose.onAllNodesWithText(complete.title).fetchSemanticsNodes().isNotEmpty()}
         return complete
@@ -79,6 +80,7 @@ class AppSmokeTest {
         compose.onNodeWithText(book.title).performClick()
         compose.onNodeWithText("Ascolta").performClick()
         compose.waitUntil(10_000){vm.now.playing}
+        compose.onNodeWithText("Capitolo introduttivo").assertIsDisplayed()
         compose.runOnIdle{vm.seek(10_000);vm.speed(1.5f)}
         compose.waitUntil(10_000){app.library.books.value.first().positionMs>=9000}
         compose.onNodeWithTag("play_pause").performClick()

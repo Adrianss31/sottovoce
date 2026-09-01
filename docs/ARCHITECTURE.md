@@ -24,10 +24,10 @@ Dalla versione 0.1.1, al primo avvio vengono riesaminati automaticamente gli M4B
 
 ## Aggiornamenti
 
-L’utente richiede il controllo; non ci sono download automatici in background. Il descrittore pubblico `update.json` contiene un payload Base64 e una firma RSA/SHA-256. La chiave pubblica è incorporata nell’app. Il payload indica versione, codice crescente, Android minimo, URL, dimensione, SHA-256 e note.
+All’apertura l’app scarica e verifica soltanto il piccolo descrittore pubblico `update.json`; l’APK viene scaricato esclusivamente dopo il tocco dell’utente sul banner. Il descrittore contiene un payload Base64 e una firma RSA/SHA-256. La chiave pubblica è incorporata nell’app. Il payload indica versione, codice crescente, Android minimo, URL, dimensione, SHA-256 e note.
 
 La rete ammette esclusivamente HTTPS e gli host GitHub previsti per repository e release assets. L’URL APK firmato deve appartenere alle release di questo repository. Prima dell’installazione si verificano dimensione, checksum, nome del pacchetto, versione e certificato di firma uguale all’app installata. Android svolge a sua volta la verifica crittografica del pacchetto. FileProvider espone soltanto la cartella privata di cache per gli aggiornamenti.
 
 Le chiavi private non sono incluse in Git, nelle Actions o nell’APK. La firma del pacchetto è stabile tra le release: perderla impedisce di aggiornare installazioni esistenti mantenendo l’identità dell’app. Anche la chiave di firma del descrittore va custodita e copiata in un luogo sicuro. Il modello attuale non implementa la rotazione automatica delle chiavi.
 
-Questo meccanismo distribuisce un nuovo APK: non modifica di nascosto il codice installato e non evita la conferma richiesta da Android. È pensato per distribuzione diretta, non per una pubblicazione su Google Play senza ulteriori adattamenti alle sue regole.
+Un solo tocco nell’app avvia download, verifica e apertura dell’installatore. Se manca l’autorizzazione per questa origine, al ritorno dalle impostazioni l’installatore viene aperto automaticamente. Android richiede comunque la conferma finale: un’app normale non può installare un APK in silenzio. Il meccanismo è pensato per distribuzione diretta, non per una pubblicazione su Google Play senza ulteriori adattamenti alle sue regole.

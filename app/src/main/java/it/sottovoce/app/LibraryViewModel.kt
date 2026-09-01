@@ -65,6 +65,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         private set
     var updateChecked by mutableStateOf(false)
         private set
+    var updateInProgress by mutableStateOf(false)
+        private set
     var controller by mutableStateOf<MediaController?>(null)
         private set
     private var operation: Job? = null
@@ -79,6 +81,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) { if (e !is CancellationException) message = "Impossibile avviare il lettore: ${e.message}" }
         }
         viewModelScope.launch { PlaybackSignals.error.collect { if (it != null) { message = it; PlaybackSignals.error.value = null } } }
+        viewModelScope.launch {
+            if (!BuildConfig.DEBUG) runCatching { refreshRelease() }
+        }
     }
     private fun snapshot() {
         controller?.let { c -> now = NowPlaying(c.currentMediaItem?.mediaMetadata?.extras?.getString("bookId"),
@@ -206,25 +211,33 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         pendingBackup = null; screen = "library"
         message = "Libreria ripristinata. Ricollega i file dalla scheda di ciascun libro."
     }
-    fun checkUpdate() = task("Controllo aggiornamenti…") {
-        updateFile = null
+    private suspend fun refreshRelease() {
         val info = updater.check()
         updateChecked = true
         release = info.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
+        if (release == null) updateFile = null
+    }
+    fun checkUpdate() = task("Controllo aggiornamenti…") {
+        refreshRelease()
         if (release == null) message = "Sei alla versione più recente."
     }
-    fun downloadUpdate() = task("Scaricamento aggiornamento dell’app…") {
-        val info = release ?: return@task
-        updateProgress = 0f
-        updateFile = updater.download(info) { updateProgress = it }
-        message = "Aggiornamento verificato e pronto da installare."
-    }
-    fun installUpdate(onIntent: (Intent) -> Unit) = task("Verifica dell’APK…") {
-        val file = updateFile ?: return@task
-        val info = release ?: return@task
-        withContext(Dispatchers.IO) { updater.verifyApk(file, info) }
-        stopCurrent()
-        onIntent(updater.install(file))
+    fun updateAndInstall(onIntent: (Intent) -> Unit) {
+        if (updateInProgress) return
+        viewModelScope.launch {
+            updateInProgress = true
+            try {
+                val info = release ?: return@launch
+                val file = updateFile ?: run {
+                    updateProgress = 0f
+                    updater.download(info) { updateProgress = it }.also { updateFile = it }
+                }
+                withContext(Dispatchers.IO) { updater.verifyApk(file, info) }
+                stopCurrent()
+                onIntent(updater.install(file))
+            } catch (e: CancellationException) { throw e }
+            catch (e: Exception) { message = e.message ?: "Aggiornamento non riuscito." }
+            finally { updateInProgress = false }
+        }
     }
     fun changeTheme(value: String) { theme = value; prefs.edit().putString("theme", value).apply() }
     fun setSkips(back: Int, forward: Int) {
