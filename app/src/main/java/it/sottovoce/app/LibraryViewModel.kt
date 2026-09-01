@@ -148,6 +148,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
     fun playBook(book: Book, index: Int? = null, position: Long? = null) {
         if (book.needsRelink || book.tracks.any { !library.isSafeAudioUri(it.uri) }) { selectedId = book.id; screen = "detail"; message = "Ricollega i file prima di ascoltare."; return }
+        if (book.tracks.any { !it.owned && it.size > LARGE_DOCUMENT_THRESHOLD }) {
+            task("Preparazione del file grande…") {
+                val local = importer.ensureSeekableCopy(book)
+                playBook(local, index, position)
+            }
+            return
+        }
         val c = controller ?: run { message = "Il lettore si sta avviando. Riprova fra un istante."; return }
         PlaybackSignals.error.value = null
         if (now.bookId != book.id || index != null || c.playbackState == Player.STATE_ENDED) {
@@ -274,6 +281,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
     override fun onCleared() { MediaController.releaseFuture(controllerFuture); super.onCleared() }
 }
+
+private const val LARGE_DOCUMENT_THRESHOLD = 2_000_000_000L
 
 private suspend fun <T> ListenableFuture<T>.awaitValue(): T = suspendCancellableCoroutine { continuation ->
     addListener({ try { if (continuation.isActive) continuation.resume(get()) }

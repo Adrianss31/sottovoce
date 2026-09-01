@@ -147,6 +147,54 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
         }
     }
 
+    /**
+     * Large documents exposed through Android's Storage Access Framework are not reliably
+     * seekable on every provider. Playback needs random access, unlike metadata import, so a
+     * private file is created lazily before first playback while retaining all listening data.
+     */
+    suspend fun ensureSeekableCopy(book: Book): Book = withContext(Dispatchers.IO) {
+        val external = book.tracks.filter { !it.owned && Uri.parse(it.uri).scheme == "content" }
+        if (external.isEmpty()) return@withContext book
+        val needed = external.sumOf { it.size.coerceAtLeast(0) }
+        require(StatFs(context.filesDir.path).availableBytes > needed + 32L * 1024 * 1024) {
+            "Spazio insufficiente per preparare il file grande. Libera almeno ${needed / 1024 / 1024 + 32} MB."
+        }
+        val directory = library.ownedDirectory(book.id).apply { mkdirs() }
+        val created = mutableListOf<File>()
+        try {
+            val replacements = external.associate { track ->
+                currentCoroutineContext().ensureActive()
+                val extension = track.name.substringAfterLast('.').lowercase().takeIf { it in extensions } ?: "audio"
+                val target = File(directory, "${track.id}.$extension")
+                val partial = File(directory, "${track.id}.part").also { created += it }
+                context.contentResolver.openInputStream(Uri.parse(track.uri)).use { input ->
+                    requireNotNull(input) { "File non accessibile: ${track.name}" }
+                    partial.outputStream().use { output ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            output.write(buffer, 0, count)
+                        }
+                        output.fd.sync()
+                    }
+                }
+                require(partial.length() > 0 && (track.size == 0L || partial.length() == track.size)) { "Copia incompleta: ${track.name}" }
+                require(partial.renameTo(target)) { "Impossibile completare la preparazione del file." }
+                created.remove(partial); created += target
+                track.id to track.copy(uri = Uri.fromFile(target).toString(), owned = true)
+            }
+            val updated = book.copy(tracks = book.tracks.map { replacements[it.id] ?: it })
+            withContext(NonCancellable) { library.update(book.id) { updated } }
+            created.clear()
+            updated
+        } catch (error: Exception) {
+            created.forEach { it.delete() }
+            throw error
+        }
+    }
+
     /** Re-reads chapter metadata added by newer parser versions without changing listening data. */
     suspend fun refreshChapters() = withContext(Dispatchers.IO) {
         library.books.value.toList().forEach { book ->
