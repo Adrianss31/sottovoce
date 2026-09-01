@@ -183,7 +183,17 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         } else if (c.playbackState == Player.STATE_IDLE) c.prepare()
         c.play(); snapshot()
     }
-    fun togglePlay() { controller?.let { if (it.isPlaying) it.pause() else { if (it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } }; snapshot() }
+    fun togglePlay() {
+        val current = controller ?: return
+        val resume = !current.isPlaying
+        if (resume) {
+            if (current.playbackState == Player.STATE_IDLE) current.prepare()
+            current.play()
+        } else current.pause()
+        // MediaController conferma il comando in modo asincrono: aggiorna subito
+        // l'interfaccia e lascia che listener e snapshot la riallineino al player.
+        now = now.copy(playing = resume)
+    }
     fun seek(position: Long) {
         val c = controller ?: return
         val book = library.books.value.find { it.id == now.bookId }
