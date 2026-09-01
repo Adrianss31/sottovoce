@@ -95,7 +95,18 @@ class LibraryRepository(private val context: Context) {
     }
     private fun preferences(): Preferences {
         val prefs = context.getSharedPreferences("preferences", Context.MODE_PRIVATE)
-        return Preferences(prefs.getString("theme", "system") ?: "system", prefs.getInt("skipBack", 15), prefs.getInt("skipForward", 30))
+        return Preferences(
+            theme = prefs.getString("theme", "system") ?: "system",
+            skipBack = prefs.getInt("skipBack", 15),
+            skipForward = prefs.getInt("skipForward", 30),
+            smartRewind = prefs.getBoolean("smartRewind", true),
+            nightTimerEnabled = prefs.getBoolean("nightTimerEnabled", false),
+            nightTimerStartMinutes = prefs.getInt("nightTimerStartMinutes", 22 * 60),
+            nightTimerDuration = prefs.getInt("nightTimerDuration", 30),
+            timerFade = prefs.getBoolean("timerFade", true),
+            timerShakeExtend = prefs.getBoolean("timerShakeExtend", false),
+            libraryViewMode = prefs.getString("libraryViewMode", "grid") ?: "grid",
+        )
     }
     suspend fun exportBackup(): Backup = withContext(Dispatchers.IO) { mutex.withLock {
         Backup(books = _books.value.map { b ->
@@ -124,7 +135,14 @@ class LibraryRepository(private val context: Context) {
         } finally { database.endTransaction() }
         context.getSharedPreferences("preferences", Context.MODE_PRIVATE).edit()
             .putString("theme", safe.preferences.theme).putInt("skipBack", safe.preferences.skipBack)
-            .putInt("skipForward", safe.preferences.skipForward).commit()
+            .putInt("skipForward", safe.preferences.skipForward)
+            .putBoolean("smartRewind", safe.preferences.smartRewind)
+            .putBoolean("nightTimerEnabled", safe.preferences.nightTimerEnabled)
+            .putInt("nightTimerStartMinutes", safe.preferences.nightTimerStartMinutes)
+            .putInt("nightTimerDuration", safe.preferences.nightTimerDuration)
+            .putBoolean("timerFade", safe.preferences.timerFade)
+            .putBoolean("timerShakeExtend", safe.preferences.timerShakeExtend)
+            .putString("libraryViewMode", safe.preferences.libraryViewMode).commit()
         refresh()
     } }
 }

@@ -2,6 +2,7 @@ package it.sottovoce.app
 
 import it.sottovoce.app.data.*
 import it.sottovoce.app.update.*
+import it.sottovoce.app.playback.*
 import kotlinx.serialization.encodeToString
 import org.junit.Assert.*
 import org.junit.Test
@@ -36,8 +37,24 @@ class CoreTest {
         assertEquals(ChapterStatus.CURRENT,book.chapterStatus(chapters[1]))
         assertEquals(ChapterPlaybackStart(1,15_000),book.chapterPlaybackStart())
     }
+    @Test fun smartRewindGrowsWithThePauseAndRemainsBounded() {
+        assertEquals(0L, smartRewindForPause(29_999))
+        assertEquals(5_000L, smartRewindForPause(30_000))
+        assertEquals(10_000L, smartRewindForPause(10 * 60_000L))
+        assertEquals(20_000L, smartRewindForPause(2 * 60 * 60_000L))
+        assertEquals(30_000L, smartRewindForPause(24 * 60 * 60_000L))
+    }
+    @Test fun nightTimerUsesOneSessionAcrossMidnight() {
+        assertTrue(isNightListeningTime(23 * 60, 22 * 60))
+        assertTrue(isNightListeningTime(2 * 60, 22 * 60))
+        assertFalse(isNightListeningTime(12 * 60, 22 * 60))
+        assertFalse(isNightListeningTime(60, 2 * 60))
+        assertTrue(isNightListeningTime(3 * 60, 2 * 60))
+        assertEquals(100L, nightSessionKey(100, 23 * 60, 22 * 60))
+        assertEquals(100L, nightSessionKey(101, 2 * 60, 22 * 60))
+    }
     @Test fun restoreNeverTrustsPathsFromBackupAndKeepsListeningData() {
-        val book=Book(title="Libro",tracks=listOf(AudioTrack(uri="file:///data/private",name="audio",owned=true)),positionMs=12_000,coverPath="/etc/secret")
+        val book=Book(title="Libro",series="Trilogia",seriesPosition=2,tracks=listOf(AudioTrack(uri="file:///data/private",name="audio",owned=true)),positionMs=12_000,coverPath="/etc/secret")
         val mark=Bookmark(bookId=book.id,trackIndex=0,positionMs=1000,note="Ricorda")
         val safe=validateBackup(Backup(books=listOf(book),bookmarks=listOf(mark)))
         assertEquals("",safe.books.single().tracks.single().uri)
@@ -45,6 +62,8 @@ class CoreTest {
         assertTrue(safe.books.single().needsRelink)
         assertNull(safe.books.single().coverPath)
         assertEquals(12_000L,safe.books.single().positionMs)
+        assertEquals("Trilogia",safe.books.single().series)
+        assertEquals(2,safe.books.single().seriesPosition)
         assertEquals(mark,safe.bookmarks.single())
     }
     @Test fun invalidRestoreIsRejectedBeforeDatabaseMutation() {

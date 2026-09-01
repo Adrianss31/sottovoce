@@ -44,6 +44,20 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         private set
     var skipForward by mutableStateOf(prefs.getInt("skipForward", 30))
         private set
+    var smartRewind by mutableStateOf(prefs.getBoolean("smartRewind", true))
+        private set
+    var nightTimerEnabled by mutableStateOf(prefs.getBoolean("nightTimerEnabled", false))
+        private set
+    var nightTimerStartMinutes by mutableStateOf(prefs.getInt("nightTimerStartMinutes", 22 * 60))
+        private set
+    var nightTimerDuration by mutableStateOf(prefs.getInt("nightTimerDuration", 30))
+        private set
+    var timerFade by mutableStateOf(prefs.getBoolean("timerFade", true))
+        private set
+    var timerShakeExtend by mutableStateOf(prefs.getBoolean("timerShakeExtend", false))
+        private set
+    var libraryViewMode by mutableStateOf(prefs.getString("libraryViewMode", "grid") ?: "grid")
+        private set
     var screen by mutableStateOf("library")
     var selectedId by mutableStateOf<String?>(null)
     var now by mutableStateOf(NowPlaying())
@@ -204,9 +218,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         library.bookmark(Bookmark(bookId = id, trackIndex = now.trackIndex, positionMs = now.position, note = note.take(10_000)))
         message = "Segnalibro salvato."
     } } }
-    fun saveMetadata(book: Book, title: String, author: String, narrator: String) = task("Salvataggio…") {
+    fun saveMetadata(book: Book, title: String, author: String, narrator: String, series: String, seriesPosition: Int?) = task("Salvataggio…") {
         require(title.isNotBlank()) { "Il titolo non può essere vuoto." }
-        library.update(book.id) { it.copy(title = title.trim().take(1000), author = author.trim().take(1000), narrator = narrator.trim().take(1000)) }
+        require(seriesPosition == null || seriesPosition in 1..999) { "Il numero nella serie deve essere compreso tra 1 e 999." }
+        library.update(book.id) { it.copy(
+            title = title.trim().take(1000), author = author.trim().take(1000), narrator = narrator.trim().take(1000),
+            series = series.trim().take(1000), seriesPosition = seriesPosition.takeIf { series.isNotBlank() },
+        ) }
     }
     fun markCompleted(book: Book) = task("Salvataggio…") { library.update(book.id) { it.copy(completed = !it.completed) } }
     fun removeBook(book: Book, copiesOnly: Boolean) = task("Rimozione…") {
@@ -236,6 +254,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val backup = pendingBackup ?: return@task
         stopCurrent(); library.restore(backup)
         theme = backup.preferences.theme; skipBack = backup.preferences.skipBack; skipForward = backup.preferences.skipForward
+        smartRewind = backup.preferences.smartRewind
+        nightTimerEnabled = backup.preferences.nightTimerEnabled
+        nightTimerStartMinutes = backup.preferences.nightTimerStartMinutes
+        nightTimerDuration = backup.preferences.nightTimerDuration
+        timerFade = backup.preferences.timerFade
+        timerShakeExtend = backup.preferences.timerShakeExtend
+        libraryViewMode = backup.preferences.libraryViewMode
         pendingBackup = null; screen = "library"
         message = "Libreria ripristinata. Ricollega i file dalla scheda di ciascun libro."
     }
@@ -271,6 +296,31 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun setSkips(back: Int, forward: Int) {
         skipBack = back; skipForward = forward
         prefs.edit().putInt("skipBack", back).putInt("skipForward", forward).apply()
+    }
+    fun changeSmartRewind(enabled: Boolean) {
+        smartRewind = enabled; prefs.edit().putBoolean("smartRewind", enabled).apply()
+    }
+    fun changeNightTimerEnabled(enabled: Boolean) {
+        nightTimerEnabled = enabled
+        prefs.edit().putBoolean("nightTimerEnabled", enabled).remove("nightTimerLastSession").apply()
+    }
+    fun changeNightTimerStart(minutes: Int) {
+        nightTimerStartMinutes = minutes.coerceIn(0, 24 * 60 - 1)
+        prefs.edit().putInt("nightTimerStartMinutes", nightTimerStartMinutes).remove("nightTimerLastSession").apply()
+    }
+    fun changeNightTimerDuration(minutes: Int) {
+        nightTimerDuration = minutes.coerceIn(5, 180)
+        prefs.edit().putInt("nightTimerDuration", nightTimerDuration).remove("nightTimerLastSession").apply()
+    }
+    fun changeTimerFade(enabled: Boolean) {
+        timerFade = enabled; prefs.edit().putBoolean("timerFade", enabled).apply()
+    }
+    fun changeTimerShakeExtend(enabled: Boolean) {
+        timerShakeExtend = enabled; prefs.edit().putBoolean("timerShakeExtend", enabled).apply()
+    }
+    fun changeLibraryViewMode(mode: String) {
+        libraryViewMode = mode.takeIf { it in setOf("grid", "compact") } ?: "grid"
+        prefs.edit().putString("libraryViewMode", libraryViewMode).apply()
     }
     override fun onCleared() { MediaController.releaseFuture(controllerFuture); super.onCleared() }
 }

@@ -22,6 +22,8 @@ val AppJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     val title: String,
     val author: String = "",
     val narrator: String = "",
+    val series: String = "",
+    val seriesPosition: Int? = null,
     val tracks: List<AudioTrack>,
     val coverPath: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
@@ -91,7 +93,18 @@ fun Book.chapterPlaybackStart(index: Int = trackIndex, position: Long = position
     val trackIndex: Int, val positionMs: Long, val note: String = "",
     val createdAt: Long = System.currentTimeMillis(),
 )
-@Serializable data class Preferences(val theme: String = "system", val skipBack: Int = 15, val skipForward: Int = 30)
+@Serializable data class Preferences(
+    val theme: String = "system",
+    val skipBack: Int = 15,
+    val skipForward: Int = 30,
+    val smartRewind: Boolean = true,
+    val nightTimerEnabled: Boolean = false,
+    val nightTimerStartMinutes: Int = 22 * 60,
+    val nightTimerDuration: Int = 30,
+    val timerFade: Boolean = true,
+    val timerShakeExtend: Boolean = false,
+    val libraryViewMode: String = "grid",
+)
 
 @Serializable data class Backup(
     val format: String = "sottovoce", val version: Int = 1,
@@ -105,11 +118,15 @@ fun validateBackup(backup: Backup): Backup {
     require(backup.books.size <= 2000 && backup.bookmarks.size <= 50_000) { "Backup troppo grande." }
     require(backup.preferences.theme in setOf("system", "light", "dark"))
     require(backup.preferences.skipBack in 5..120 && backup.preferences.skipForward in 5..120)
+    require(backup.preferences.nightTimerStartMinutes in 0 until 24 * 60)
+    require(backup.preferences.nightTimerDuration in 5..180)
+    require(backup.preferences.libraryViewMode in setOf("grid", "compact"))
     val ids = backup.books.map { it.id }
     require(ids.distinct().size == ids.size) { "Il backup contiene libri duplicati." }
     backup.books.forEach { b ->
         require(b.id.matches(Regex("[a-zA-Z0-9-]{1,80}")) && b.title.length in 1..1000)
-        require(b.author.length <= 1000 && b.narrator.length <= 1000)
+        require(b.author.length <= 1000 && b.narrator.length <= 1000 && b.series.length <= 1000)
+        require(b.seriesPosition == null || b.seriesPosition in 1..999)
         require(b.tracks.size in 1..2000 && b.trackIndex in b.tracks.indices && b.positionMs >= 0)
         require(b.speed.isFinite() && b.speed in 0.5f..3f)
         require(b.tracks.map { it.id }.distinct().size == b.tracks.size)

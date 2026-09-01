@@ -40,7 +40,10 @@ class AppSmokeTest {
         compose.runOnIdle{future=vm.controller?.sendCustomCommand(SessionCommand("it.sottovoce.STOP_AND_SAVE",Bundle.EMPTY),Bundle.EMPTY)}
         future?.get(10,TimeUnit.SECONDS)
         runBlocking {app.library.load();app.library.books.value.toList().forEach{app.library.removeBook(it.id)}}
-        compose.runOnIdle{vm.screen="library";vm.message=null;vm.changeTheme("light");vm.setSkips(15,30)}
+        compose.runOnIdle{
+            vm.screen="library";vm.message=null;vm.changeTheme("light");vm.setSkips(15,30)
+            vm.changeSmartRewind(true);vm.changeNightTimerEnabled(false);vm.changeTimerFade(true);vm.changeTimerShakeExtend(false);vm.changeLibraryViewMode("grid")
+        }
     }
     private fun wav():ByteArray {
         val samples=16_000*30
@@ -74,6 +77,16 @@ class AppSmokeTest {
         compose.onNodeWithTag("import_button").performClick()
         compose.onNodeWithText("Scegli file").assertIsDisplayed()
         compose.onNodeWithText("Scegli cartella").assertIsDisplayed()
+    }
+    @Test fun seriesCanBeGroupedAndLibraryCanBecomeCompact() {
+        val book=seed()
+        runBlocking{app.library.update(book.id){it.copy(series="Trilogia di prova",seriesPosition=1)}}
+        compose.waitUntil(5000){compose.onAllNodesWithText("Trilogia di prova",substring=true).fetchSemanticsNodes().isNotEmpty()}
+        compose.onNodeWithContentDescription("Vista compatta").performClick()
+        compose.onNodeWithContentDescription("Ordina libri").performClick()
+        compose.onNodeWithText("Serie").performClick()
+        compose.onAllNodesWithText("Trilogia di prova",substring=true).onFirst().assertIsDisplayed()
+        compose.onNodeWithTag("book_${book.id}").assertIsDisplayed()
     }
     @Test fun playerPersistsSeekSpeedAndBookmark() {
         val book=seed()
@@ -109,9 +122,11 @@ class AppSmokeTest {
         var timerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.SessionResult>?=null
         compose.runOnIdle{timerFuture=vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY)}
         timerFuture!!.get(5,TimeUnit.SECONDS)
-        compose.waitUntil(5000){PlaybackSignals.timer.value=="30 minuti"}
+        compose.waitUntil(5000){PlaybackSignals.timer.value.startsWith("30")}
         compose.runOnIdle{timerFuture=vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY)}
         timerFuture!!.get(5,TimeUnit.SECONDS)
+        compose.waitUntil(5000){PlaybackSignals.timer.value.startsWith("40")}
+        compose.runOnIdle{vm.timer(0)}
         compose.waitUntil(5000){PlaybackSignals.timer.value.isEmpty()}
         runBlocking{app.library.load()}
         assertEquals("Un passaggio da ricordare",app.library.bookmarks.value.single().note)

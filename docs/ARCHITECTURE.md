@@ -8,7 +8,7 @@ L’interfaccia non separa la scheda del libro dal lettore: la stessa destinazio
 
 SQLiteOpenHelper, database `library.db`, schema 1, WAL e transazioni per importazione e ripristino. Le entità serializzate JSON consentono di aggiungere campi con valori predefiniti. Modifiche allo schema SQL richiederanno una migrazione esplicita: non esiste cancellazione automatica del database in caso di errore di versione.
 
-Book contiene metadati, tracce ordinate, posizione, velocità, completamento e stato di collegamento. I segnalibri sono associati al libro con chiave esterna. UPDATE conserva i segnalibri; non viene usato REPLACE sui libri. Copie audio in `files/books/<id>/`; gli originali content:// sono letti tramite permessi espliciti del selettore di Android. Non si richiede MANAGE_EXTERNAL_STORAGE.
+Book contiene metadati, serie e posizione nella serie, tracce ordinate, posizione, velocità, completamento e stato di collegamento. I segnalibri sono associati al libro con chiave esterna. UPDATE conserva i segnalibri; non viene usato REPLACE sui libri. Copie audio in `files/books/<id>/`; gli originali content:// sono letti tramite permessi espliciti del selettore di Android. Non si richiede MANAGE_EXTERNAL_STORAGE.
 
 L’importazione di copie usa file intermedi, controllo dimensione e sincronizzazione prima di registrare il libro. Una cancellazione non deve eliminare copie già registrate nel database. In caso di arresto forzato durante la copia possono rimanere file incompleti privati: una gestione automatica degli orfani è un miglioramento futuro.
 
@@ -16,7 +16,11 @@ Il backup esportato elimina URI e percorsi, conservando metadati e dati di ascol
 
 ## Riproduzione
 
-ExoPlayer e MediaSessionService, audio focus con contenuto parlato, wake lock locale, notifica di sistema e gestione dello scollegamento delle cuffie. Ogni capitolo viene esposto alla sessione come MediaItem ritagliato sulla sorgente originale: Android riceve titolo, durata e posizione relativi al capitolo, mentre l’app converte sempre salvataggi e ricerche nella posizione assoluta della traccia. I controlli multimediali preferiti sono play/pausa, indietro 10 secondi e un comando personalizzato che attiva o disattiva un timer di 30 minuti. Il servizio salva periodicamente la posizione (circa ogni 3 secondi) e agli eventi principali; un arresto improvviso può far perdere gli ultimissimi secondi. Velocità conservata per libro.
+ExoPlayer e MediaSessionService, audio focus con contenuto parlato, wake lock locale, notifica di sistema e gestione dello scollegamento delle cuffie. Ogni capitolo viene esposto alla sessione come MediaItem ritagliato sulla sorgente originale: Android riceve titolo, durata e posizione relativi al capitolo, mentre l’app converte sempre salvataggi e ricerche nella posizione assoluta della traccia. I controlli multimediali preferiti sono play/pausa, indietro 10 secondi e un comando personalizzato che avvia il timer o lo prolunga di 10 minuti. Il servizio salva periodicamente la posizione (circa ogni 3 secondi) e agli eventi principali; un arresto improvviso può far perdere gli ultimissimi secondi. Velocità conservata per libro.
+
+La ripresa intelligente conserva soltanto libro e istante dell’ultima pausa nelle preferenze e applica un ritorno graduato tra 0 e 30 secondi, senza uscire dal capitolo corrente. Il timer supporta scadenza temporale o fine capitolo, dissolvenza nell’ultimo minuto e prolungamento tramite notifica o accelerometro. Il timer notturno usa ora locale, orario e durata scelti dall’utente e registra la sessione della notte per non riattivarsi dopo ogni pausa.
+
+Widget e riquadro dei comandi rapidi si collegano alla stessa MediaSession e non ricevono URI dall’esterno. Il widget mostra il capitolo corrente, il suo avanzamento e i comandi essenziali; il riquadro esegue play/pausa. Se la sessione non contiene elementi, viene scelto esclusivamente un libro valido dalla libreria locale.
 
 Le richieste esterne non possono fornire URL arbitrari al servizio: gli elementi della sessione vengono risolti per identificatore nella libreria locale. Si accettano controller dell’app e controller considerati affidabili dal sistema. I comandi per fermare/salvare e impostare il timer sono riservati all’app stessa.
 

@@ -2,6 +2,10 @@ package it.sottovoce.app.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -44,6 +48,9 @@ import it.sottovoce.app.data.chapterTimeline
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.time.ZonedDateTime
+import kotlin.math.ceil
+import kotlin.math.sqrt
 
 object PlaybackSignals {
     val error = MutableStateFlow<String?>(null)
@@ -70,7 +77,7 @@ fun Book.mediaItems(): List<MediaItem> = chapterTimeline().map { chapter ->
 }
 
 @UnstableApi
-class PlaybackService : MediaSessionService() {
+class PlaybackService : MediaSessionService(), SensorEventListener {
     private lateinit var player: ExoPlayer
     private var session: MediaSession? = null
     private val app get() = application as SottovoceApp
@@ -79,12 +86,17 @@ class PlaybackService : MediaSessionService() {
     private var chapterEnd = -1L
     private var chapterTrack = -1
     private var ticks = 0
+    private var wasPlayWhenReady = false
+    private var automaticTimer = false
+    private var lastShakeAt = 0L
+    private lateinit var sensorManager: SensorManager
     private val timerCommand = SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND, Bundle.EMPTY)
+    private fun timerActive() = deadline > 0 || chapterTrack >= 0
     private fun mediaButtons() = listOf(
         CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10).setDisplayName("Indietro 10 secondi")
             .setPlayerCommand(Player.COMMAND_SEEK_BACK).setSlots(CommandButton.SLOT_BACK).build(),
         CommandButton.Builder(CommandButton.ICON_UNDEFINED).setCustomIconResId(R.drawable.ic_timer_notification)
-            .setDisplayName(if (deadline > 0) "Disattiva timer" else "Timer 30 minuti")
+            .setDisplayName(if (timerActive()) "Aggiungi 10 minuti" else "Timer 30 minuti")
             .setSessionCommand(timerCommand).setSlots(CommandButton.SLOT_FORWARD).build(),
     )
     private fun updateMediaButtons() {
@@ -101,6 +113,7 @@ class PlaybackService : MediaSessionService() {
                 (player.currentMediaItemIndex != chapterTrack || chapterEnd > 0 && player.currentPosition >= chapterEnd - 50)) {
                 finishChapterTimer()
             }
+            updateTimerPresentation()
             if (++ticks % 12 == 0 && player.isPlaying) save()
             handler.postDelayed(this, 250)
         }
@@ -108,6 +121,7 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val prefs = getSharedPreferences("preferences", MODE_PRIVATE)
+        sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
         val playerBuilder = if (Build.VERSION.SDK_INT >= 30) ExoPlayer.Builder(this, renderers, PlatformMediaSourceFactory(this))
             else ExoPlayer.Builder(this, renderers)
@@ -119,7 +133,10 @@ class PlaybackService : MediaSessionService() {
                 setHandleAudioBecomingNoisy(true)
                 setWakeMode(C.WAKE_MODE_LOCAL)
                 addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(isPlaying: Boolean) { save() }
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        if (isPlaying) maybeStartNightTimer()
+                        save()
+                    }
                     override fun onPlaybackStateChanged(playbackState: Int) { if (playbackState == Player.STATE_ENDED) save(finished = true) }
                     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
                         save()
@@ -129,6 +146,9 @@ class PlaybackService : MediaSessionService() {
                         save()
                     }
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (playWhenReady && !wasPlayWhenReady) applySmartRewind()
+                        else if (!playWhenReady && wasPlayWhenReady) rememberPause()
+                        wasPlayWhenReady = playWhenReady
                         if (!playWhenReady && reason == Player.PLAY_WHEN_READY_CHANGE_REASON_END_OF_MEDIA_ITEM && chapterTrack >= 0) stopTimer(false)
                         save()
                     }
@@ -171,7 +191,7 @@ class PlaybackService : MediaSessionService() {
             override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
                 if (command.customAction == PlaybackSignals.TOGGLE_TIMER_COMMAND &&
                     (session.isMediaNotificationController(controller) || controller.packageName == packageName)) {
-                    configureTimer(if (deadline > 0) 0 else 30)
+                    if (timerActive()) extendTimer(10) else configureTimer(30)
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
                 if (controller.packageName != packageName)
@@ -242,28 +262,94 @@ class PlaybackService : MediaSessionService() {
         val index = extras.getInt("trackIndex")
         val position = (extras.getLong("chapterStartMs", 0) + player.currentPosition).coerceAtLeast(0)
         val speed = player.playbackParameters.speed
+        WidgetUpdater.update(this, id, index, position, player.isPlaying)
         app.scope.launch { app.library.savePosition(id, index, position, speed, finished) }
     }
-    private fun configureTimer(minutes: Int) {
+    private fun currentBookId(): String? = player.currentMediaItem?.mediaMetadata?.extras?.getString("bookId")
+    private fun rememberPause() {
+        val id = currentBookId() ?: return
+        getSharedPreferences("preferences", MODE_PRIVATE).edit()
+            .putString("smartPauseBook", id).putLong("smartPauseAt", System.currentTimeMillis()).apply()
+    }
+    private fun applySmartRewind() {
+        val prefs = getSharedPreferences("preferences", MODE_PRIVATE)
+        val id = currentBookId() ?: return
+        val pausedBook = prefs.getString("smartPauseBook", null)
+        val pausedAt = prefs.getLong("smartPauseAt", 0L)
+        prefs.edit().remove("smartPauseBook").remove("smartPauseAt").apply()
+        if (!prefs.getBoolean("smartRewind", true) || pausedBook != id || pausedAt <= 0L) return
+        val rewind = smartRewindForPause((System.currentTimeMillis() - pausedAt).coerceAtLeast(0))
+        if (rewind > 0 && player.currentPosition > 0) player.seekTo((player.currentPosition - rewind).coerceAtLeast(0))
+    }
+    private fun maybeStartNightTimer() {
+        if (timerActive()) return
+        val prefs = getSharedPreferences("preferences", MODE_PRIVATE)
+        if (!prefs.getBoolean("nightTimerEnabled", false)) return
+        val now = ZonedDateTime.now()
+        val minute = now.hour * 60 + now.minute
+        val start = prefs.getInt("nightTimerStartMinutes", 22 * 60)
+        if (!isNightListeningTime(minute, start)) return
+        val sessionKey = nightSessionKey(now.toLocalDate().toEpochDay(), minute, start)
+        if (prefs.getLong("nightTimerLastSession", Long.MIN_VALUE) == sessionKey) return
+        prefs.edit().putLong("nightTimerLastSession", sessionKey).apply()
+        configureTimer(prefs.getInt("nightTimerDuration", 30), automatic = true)
+    }
+    private fun configureTimer(minutes: Int, automatic: Boolean = false) {
         stopTimer(false)
+        automaticTimer = automatic
         if (minutes == -1) {
             chapterTrack = player.currentMediaItemIndex
             chapterEnd = player.duration.takeIf { it > 0 } ?: C.TIME_UNSET
             player.pauseAtEndOfMediaItems = true
-            PlaybackSignals.timer.value = "Fine capitolo"
         } else if (minutes in 1..180) {
             deadline = SystemClock.elapsedRealtime() + minutes * 60_000L
-            PlaybackSignals.timer.value = "$minutes minuti"
         }
+        if (timerActive()) registerShakeIfEnabled()
+        updateTimerPresentation()
         updateMediaButtons()
+    }
+    private fun extendTimer(minutes: Int) {
+        if (deadline > 0) deadline += minutes * 60_000L
+        else if (chapterTrack >= 0) {
+            player.pauseAtEndOfMediaItems = false
+            chapterTrack = -1; chapterEnd = -1
+            deadline = SystemClock.elapsedRealtime() + minutes * 60_000L
+        } else return
+        player.volume = 1f
+        updateTimerPresentation()
+        updateMediaButtons()
+    }
+    private fun updateTimerPresentation() {
+        val remaining = when {
+            deadline > 0 -> (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0)
+            chapterTrack >= 0 && player.duration > 0 -> (player.duration - player.currentPosition).coerceAtLeast(0)
+            else -> -1L
+        }
+        PlaybackSignals.timer.value = when {
+            remaining < 0 -> ""
+            chapterTrack >= 0 -> "Fine capitolo"
+            automaticTimer -> "Notte · ${ceil(remaining / 60_000.0).toInt()} min"
+            else -> "${ceil(remaining / 60_000.0).toInt()} min"
+        }
+        val fadeEnabled = getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("timerFade", true)
+        player.volume = if (fadeEnabled && remaining in 0..60_000L) (remaining / 60_000f).coerceIn(.05f, 1f) else 1f
+    }
+    private fun registerShakeIfEnabled() {
+        val enabled = getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("timerShakeExtend", false)
+        if (!enabled) return
+        sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)?.let {
+            sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL)
+        }
     }
     private fun finishChapterTimer() {
         val itemIndex = chapterTrack
         val endPosition = chapterEnd
-        deadline = 0; chapterEnd = -1; chapterTrack = -1
+        deadline = 0; chapterEnd = -1; chapterTrack = -1; automaticTimer = false
         PlaybackSignals.timer.value = ""
+        sensorManager.unregisterListener(this)
         if (::player.isInitialized) {
             player.pauseAtEndOfMediaItems = false
+            player.volume = 1f
             player.pause()
             if (itemIndex >= 0 && endPosition > 0) {
                 player.seekTo(itemIndex, (endPosition - 1).coerceAtLeast(0))
@@ -272,14 +358,26 @@ class PlaybackService : MediaSessionService() {
         updateMediaButtons()
     }
     private fun stopTimer(pause: Boolean) {
-        deadline = 0; chapterEnd = -1; chapterTrack = -1
+        deadline = 0; chapterEnd = -1; chapterTrack = -1; automaticTimer = false
         PlaybackSignals.timer.value = ""
-        if (::player.isInitialized) { player.pauseAtEndOfMediaItems = false; if (pause) player.pause() }
+        sensorManager.unregisterListener(this)
+        if (::player.isInitialized) { player.pauseAtEndOfMediaItems = false; player.volume = 1f; if (pause) player.pause() }
         updateMediaButtons()
     }
+    override fun onSensorChanged(event: SensorEvent) {
+        if (!timerActive() || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+        val force = sqrt(event.values.sumOf { (it * it).toDouble() }).toFloat() / SensorManager.GRAVITY_EARTH
+        val now = SystemClock.elapsedRealtime()
+        if (force >= 2.4f && now - lastShakeAt > 3_000L) {
+            lastShakeAt = now
+            extendTimer(10)
+        }
+    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
     override fun onDestroy() {
         handler.removeCallbacks(tick)
+        if (::player.isInitialized && player.playWhenReady) rememberPause()
         save(); stopTimer(false)
         session?.release(); session = null
         if (::player.isInitialized) player.release()

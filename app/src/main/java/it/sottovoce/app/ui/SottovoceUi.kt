@@ -3,9 +3,14 @@ package it.sottovoce.app.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.TimePickerDialog
+import android.app.StatusBarManager
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -58,8 +63,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.util.UnstableApi
 import it.sottovoce.app.BuildConfig
 import it.sottovoce.app.LibraryViewModel
+import it.sottovoce.app.R
 import it.sottovoce.app.data.*
 import it.sottovoce.app.playback.PlaybackSignals
+import it.sottovoce.app.playback.PlaybackTileService
+import it.sottovoce.app.playback.PlaybackWidgetProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -194,6 +202,7 @@ private val SottovoceTypography = Typography(
                     "import" -> if (reorderId != null) ReorderScreen(vm, requireNotNull(reorderId)) else ImportPreview(vm, onReorder = { reorderId = it })
                     "settings" -> SettingsScreen(vm,
                         onTheme = { dialog = "theme" }, onSkips = { dialog = "skips" },
+                        onNightDuration = { dialog = "nightDuration" },
                         onBackup = { backupExport.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE)
                             .putExtra(Intent.EXTRA_TITLE, "sottovoce-backup.json").putExtra(Intent.EXTRA_LOCAL_ONLY, true)) },
                         onRestore = { backupImport.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).setType("*/*").addCategory(Intent.CATEGORY_OPENABLE).putExtra(Intent.EXTRA_LOCAL_ONLY, true)) },
@@ -212,9 +221,10 @@ private val SottovoceTypography = Typography(
                     }
                     Text("In una cartella, ogni sottocartella di primo livello viene proposta come libro separato.", style = MaterialTheme.typography.bodySmall)
                 } }, confirmButton = { TextButton(onClick = { dialog = null }) { Text("Chiudi") } })
-            "edit" -> if (book != null) EditBookDialog(book, onDismiss = { dialog = null }) { title, author, narrator -> vm.saveMetadata(book, title, author, narrator); dialog = null }
+            "edit" -> if (book != null) EditBookDialog(book, onDismiss = { dialog = null }) { title, author, narrator, series, position -> vm.saveMetadata(book, title, author, narrator, series, position); dialog = null }
             "speed" -> if (book != null) ChoiceDialog("Velocità di ascolto", listOf(.5f,.75f,1f,1.1f,1.25f,1.5f,1.75f,2f,2.5f,3f).map { it.toString()+"×" to it }, if (vm.now.bookId == book.id) vm.now.speed else book.speed, { dialog = null }) { vm.speed(book, it); dialog = null }
-            "timer" -> ChoiceDialog("Timer di spegnimento", listOf("Disattivato" to 0,"15 minuti" to 15,"30 minuti" to 30,"45 minuti" to 45,"60 minuti" to 60,"Fine capitolo / traccia" to -1), null, { dialog = null }) { vm.timer(it); dialog = null }
+            "timer" -> TimerDialog({ dialog = null }) { vm.timer(it); dialog = null }
+            "nightDuration" -> ChoiceDialog("Durata del timer notturno", listOf(15,20,30,45,60,90).map { "$it minuti" to it }, vm.nightTimerDuration, { dialog = null }) { vm.changeNightTimerDuration(it); dialog = null }
             "theme" -> ChoiceDialog("Aspetto", listOf("Come il sistema" to "system","Chiaro" to "light","Scuro" to "dark"), vm.theme, { dialog = null }) { vm.changeTheme(it); dialog = null }
             "skips" -> ChoiceDialog("Salti del lettore", listOf("Indietro 10 s · avanti 10 s" to (10 to 10),"Indietro 15 s · avanti 30 s" to (15 to 30),"Indietro 30 s · avanti 30 s" to (30 to 30),"Indietro 60 s · avanti 60 s" to (60 to 60)), vm.skipBack to vm.skipForward, { dialog = null }) { vm.setSkips(it.first,it.second); dialog = null }
             "bookmark" -> NoteDialog({ dialog = null }) { vm.addBookmark(it); dialog = null }
@@ -260,7 +270,7 @@ private val SottovoceTypography = Typography(
     var sortOpen by remember { mutableStateOf(false) }
     var searchOpen by rememberSaveable { mutableStateOf(false) }
     val filtered = books.filter { b ->
-        (b.title+" "+b.author+" "+b.narrator).contains(search, ignoreCase = true) && when (filter) {
+        (b.title+" "+b.author+" "+b.narrator+" "+b.series).contains(search, ignoreCase = true) && when (filter) {
             "In ascolto" -> b.lastPlayedAt > 0 && !b.completed
             "Da iniziare" -> b.lastPlayedAt == 0L && !b.completed
             "Completati" -> b.completed
@@ -268,6 +278,8 @@ private val SottovoceTypography = Typography(
         }
     }.let { if (sort == "Titolo") it.sortedWith { a,b -> NaturalOrder.compare(a.title,b.title) }
         else if (sort == "Autore") it.sortedBy { b -> b.author.lowercase() }
+        else if (sort == "Serie") it.sortedWith(compareBy<Book> { it.series.isBlank() }.thenBy { it.series.lowercase() }
+            .thenBy { it.seriesPosition ?: Int.MAX_VALUE }.thenComparator { a, b -> NaturalOrder.compare(a.title, b.title) })
         else it.sortedByDescending { b -> b.lastPlayedAt.coerceAtLeast(b.createdAt) } }
     LazyVerticalGrid(columns = GridCells.Adaptive(156.dp), modifier = Modifier.fillMaxSize().testTag("library"),
         contentPadding = PaddingValues(start = 22.dp, end = 22.dp, top = 12.dp, bottom = 32.dp),
@@ -296,17 +308,41 @@ private val SottovoceTypography = Typography(
                     Text("${filtered.size} ${if (filtered.size == 1) "titolo" else "titoli"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 TextButton(onClick = onImport) { Icon(Icons.Default.Add, null); Text("Aggiungi") }
                 IconButton(onClick = { searchOpen = !searchOpen }) { Icon(Icons.Default.Search, if (searchOpen) "Chiudi ricerca" else "Cerca libri") }
+                IconButton(onClick = { vm.changeLibraryViewMode(if (vm.libraryViewMode == "grid") "compact" else "grid") }) {
+                    Icon(if (vm.libraryViewMode == "grid") Icons.Default.ViewAgenda else Icons.Default.GridView,
+                        if (vm.libraryViewMode == "grid") "Vista compatta" else "Vista a griglia")
+                }
                 Box { IconButton(onClick = { sortOpen = true }) { Icon(Icons.Default.Sort, "Ordina libri") }
-                    DropdownMenu(sortOpen, { sortOpen = false }) { listOf("Recenti","Titolo","Autore").forEach { label -> DropdownMenuItem(text = { Text(label) }, onClick = { sort = label; sortOpen = false }) } }
+                    DropdownMenu(sortOpen, { sortOpen = false }) { listOf("Recenti","Titolo","Autore","Serie").forEach { label -> DropdownMenuItem(text = { Text(label) }, onClick = { sort = label; sortOpen = false }) } }
                 }
             } }
             if (searchOpen) item(span = { GridItemSpan(maxLineSpan) }) { OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().testTag("library_search"),
-                placeholder = { Text("Titolo, autore o narratore") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true, shape = SottovoceDesign.Soft) }
+                placeholder = { Text("Titolo, autore, narratore o serie") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true, shape = SottovoceDesign.Soft) }
             item(span = { GridItemSpan(maxLineSpan) }) { LibraryFilterBar(filter) { filter = it } }
             if (filtered.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { EmptyMessage("Nessun libro corrisponde alla ricerca.") }
-            gridItems(filtered, key = { it.id }) { b -> AudiobookGridItem(b, activeId == b.id, playing && activeId == b.id) { onBook(b) } }
+            if (sort == "Serie") {
+                filtered.groupBy { it.series.ifBlank { "Senza serie" } }.forEach { (series, entries) ->
+                    item(key = "series:$series", span = { GridItemSpan(maxLineSpan) }) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(if (series == "Senza serie") Icons.Default.LibraryBooks else Icons.Default.CollectionsBookmark, null, tint = MaterialTheme.colorScheme.primary)
+                            Text(series, style = MaterialTheme.typography.titleLarge)
+                            Text("· ${entries.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    gridItems(entries, key = { it.id }, span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) { b ->
+                        LibraryBookItem(b, vm.libraryViewMode, activeId == b.id, playing && activeId == b.id) { onBook(b) }
+                    }
+                }
+            } else gridItems(filtered, key = { it.id }, span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) { b ->
+                LibraryBookItem(b, vm.libraryViewMode, activeId == b.id, playing && activeId == b.id) { onBook(b) }
+            }
         }
     }
+}
+
+@Composable private fun LibraryBookItem(book: Book, mode: String, active: Boolean, playing: Boolean, onOpen: () -> Unit) {
+    if (mode == "compact") AudiobookCompactItem(book, active, playing, onOpen)
+    else AudiobookGridItem(book, active, playing, onOpen)
 }
 
 @Composable private fun LibraryFilterBar(selected: String, onSelect: (String) -> Unit) {
@@ -389,6 +425,8 @@ private val SottovoceTypography = Typography(
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(book.author.ifBlank { "Autore non indicato" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (book.series.isNotBlank()) Text(seriesLabel(book), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (book.needsRelink) Text("File da ricollegare", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                 else {
                     Text(when { book.completed -> "✓ Completato"; book.lastPlayedAt == 0L -> "Da iniziare";
@@ -399,6 +437,40 @@ private val SottovoceTypography = Typography(
                         trackColor = MaterialTheme.colorScheme.surfaceVariant)
                 }
             }
+    }
+}
+
+private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition?.let { " · Libro $it" } ?: "")
+
+@Composable private fun AudiobookCompactItem(book: Book, active: Boolean, playing: Boolean, onOpen: () -> Unit) {
+    val chapter = book.currentChapter()
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) .985f else 1f, spring(stiffness = Spring.StiffnessMediumLow), label = "pressione riga libro")
+    Surface(Modifier.fillMaxWidth().testTag("book_${book.id}").graphicsLayer { scaleX = scale; scaleY = scale }
+        .clickable(interactionSource = interaction, indication = null, onClick = onOpen), shape = RoundedCornerShape(18.dp),
+        color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .62f)) {
+        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+            Cover(book, Modifier.width(58.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(book.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(book.author.ifBlank { "Autore non indicato" }, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (book.series.isNotBlank()) Text(seriesLabel(book), style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(when {
+                    book.needsRelink -> "File da ricollegare"
+                    book.completed -> "Completato"
+                    book.lastPlayedAt == 0L -> "Da iniziare · ${timeLabel(book.durationMs)}"
+                    else -> chapter?.let { "${it.title} · ${timeLabel(it.remainingMs(book.positionMs))} rimasti" } ?: "In ascolto"
+                }, style = MaterialTheme.typography.labelSmall, color = if (book.needsRelink) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (book.lastPlayedAt > 0 || book.completed) LinearProgressIndicator(progress = { if (book.completed) 1f else book.progress },
+                    modifier = Modifier.fillMaxWidth().height(3.dp).clip(CircleShape))
+            }
+            Icon(if (active && playing) Icons.Default.GraphicEq else Icons.Default.ChevronRight,
+                if (active && playing) "In riproduzione" else null, tint = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 @Composable private fun Cover(book: Book, modifier: Modifier = Modifier) {
@@ -476,6 +548,9 @@ private val SottovoceTypography = Typography(
                     }
                     Text(book.title, style = MaterialTheme.typography.headlineSmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
                     if (book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.titleSmall)
+                    if (book.series.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Icon(Icons.Default.CollectionsBookmark, "Serie", Modifier.size(16.dp)); Text(seriesLabel(book), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
                     if (book.narrator.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(Icons.Default.Mic, "Narratore", Modifier.size(16.dp)); Text("Letto da ${book.narrator}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -670,13 +745,42 @@ private fun Long?.orZero(): Long = this ?: 0L
 }
 
 @UnstableApi
-@Composable private fun SettingsScreen(vm:LibraryViewModel,onTheme:()->Unit,onSkips:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onInstall:()->Unit) {
+@Composable private fun SettingsScreen(vm:LibraryViewModel,onTheme:()->Unit,onSkips:()->Unit,onNightDuration:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onInstall:()->Unit) {
     val context=LocalContext.current
     val storage by produceState(0L) {value=withContext(Dispatchers.IO){File(context.filesDir,"books").walkTopDown().filter{it.isFile}.sumOf{it.length()}}}
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
         item {Text("Impostazioni",style=MaterialTheme.typography.headlineLarge)}
         item {SettingRow("Aspetto",when(vm.theme){"dark"->"Scuro";"light"->"Chiaro";else->"Come il sistema"},Icons.Default.Palette,onTheme)}
         item {SettingRow("Salti del lettore","Indietro ${vm.skipBack} s · avanti ${vm.skipForward} s",Icons.Default.Replay,onSkips)}
+        item {Text("Ascolto",style=MaterialTheme.typography.titleLarge)}
+        item {SwitchSettingRow("Ripresa intelligente","Torna indietro in base alla durata della pausa.",Icons.Default.History,vm.smartRewind,vm::changeSmartRewind)}
+        item {SwitchSettingRow("Timer automatico notturno","Si attiva una sola volta per notte quando inizi ad ascoltare.",Icons.Default.Bedtime,vm.nightTimerEnabled,vm::changeNightTimerEnabled)}
+        if(vm.nightTimerEnabled) {
+            item {SettingRow("Inizia dopo",clockLabel(vm.nightTimerStartMinutes),Icons.Default.Schedule) {
+                TimePickerDialog(context,{_,hour,minute->vm.changeNightTimerStart(hour*60+minute)},vm.nightTimerStartMinutes/60,vm.nightTimerStartMinutes%60,true).show()
+            }}
+            item {SettingRow("Durata notturna","${vm.nightTimerDuration} minuti",Icons.Default.Timer,onNightDuration)}
+        }
+        item {SwitchSettingRow("Dissolvenza finale","Riduce gradualmente il volume nell’ultimo minuto.",Icons.Default.VolumeDown,vm.timerFade,vm::changeTimerFade)}
+        item {SwitchSettingRow("Scuoti per altri 10 minuti","Funziona soltanto mentre un timer è attivo.",Icons.Default.Vibration,vm.timerShakeExtend,vm::changeTimerShakeExtend)}
+        item {SettingRow("Vista della libreria",if(vm.libraryViewMode=="compact")"Compatta" else "Griglia",if(vm.libraryViewMode=="compact")Icons.Default.ViewAgenda else Icons.Default.GridView) {
+            vm.changeLibraryViewMode(if(vm.libraryViewMode=="grid")"compact" else "grid")
+        }}
+        item {Text("Accesso rapido",style=MaterialTheme.typography.titleLarge);Text("Controlla libro, capitolo e riproduzione senza aprire l’app.",style=MaterialTheme.typography.bodyMedium)}
+        item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){
+            OutlinedButton(onClick={
+                val manager=AppWidgetManager.getInstance(context)
+                if(manager.isRequestPinAppWidgetSupported) manager.requestPinAppWidget(ComponentName(context,PlaybackWidgetProvider::class.java),null,null)
+                else vm.message="Aggiungi il widget Sottovoce dal menu dei widget del launcher."
+            },modifier=Modifier.weight(1f)){Icon(Icons.Default.Widgets,null);Spacer(Modifier.width(5.dp));Text("Widget")}
+            OutlinedButton(onClick={
+                if(Build.VERSION.SDK_INT>=33) context.getSystemService(StatusBarManager::class.java).requestAddTileService(
+                    ComponentName(context,PlaybackTileService::class.java),"Sottovoce",Icon.createWithResource(context,R.drawable.ic_launcher),context.mainExecutor
+                ){result->vm.message=if(result==StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED||result==StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED)
+                    "Riquadro Sottovoce disponibile nei comandi rapidi." else "Il riquadro non è stato aggiunto."}
+                else vm.message="Apri i comandi rapidi, scegli Modifica e trascina il riquadro Sottovoce."
+            },modifier=Modifier.weight(1f)){Icon(Icons.Default.DashboardCustomize,null);Spacer(Modifier.width(5.dp));Text("Riquadro")}
+        }}
         item {Text("Backup locale",style=MaterialTheme.typography.titleLarge);Text("Salva libreria, progressi, segnalibri e preferenze. Gli audio vanno conservati separatamente.",style=MaterialTheme.typography.bodyMedium)}
         item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick=onBackup,modifier=Modifier.weight(1f)){Text("Esporta")};OutlinedButton(onClick=onRestore,modifier=Modifier.weight(1f)){Text("Ripristina")}}}
         item {Text("Spazio gestito: ${storage/1024/1024} MB",style=MaterialTheme.typography.titleMedium);Text("Copie audio e copertine. Per eliminare una copia apri la scheda del libro: gli originali restano intatti.",style=MaterialTheme.typography.bodySmall)}
@@ -702,15 +806,37 @@ private fun Long?.orZero(): Long = this ?: 0L
 @Composable private fun SettingRow(title:String,value:String,icon:ImageVector,onClick:()->Unit) {
     ListItem(headlineContent={Text(title)},supportingContent={Text(value)},leadingContent={Icon(icon,null)},trailingContent={Icon(Icons.Default.ChevronRight,null)},modifier=Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick=onClick))
 }
+@Composable private fun SwitchSettingRow(title:String,value:String,icon:ImageVector,checked:Boolean,onChecked:(Boolean)->Unit) {
+    ListItem(headlineContent={Text(title)},supportingContent={Text(value)},leadingContent={Icon(icon,null)},
+        trailingContent={Switch(checked,onChecked)},modifier=Modifier.clip(RoundedCornerShape(12.dp)).clickable{onChecked(!checked)})
+}
+private fun clockLabel(minutes:Int)="%02d:%02d".format(minutes/60,minutes%60)
 @Composable private fun EmptyMessage(text:String){Box(Modifier.fillMaxWidth().padding(24.dp),contentAlignment=Alignment.Center){Text(text,color=MaterialTheme.colorScheme.onSurfaceVariant)}}
+@Composable private fun TimerDialog(onDismiss:()->Unit,onSelect:(Int)->Unit){
+    var custom by remember{mutableStateOf("")}
+    val customMinutes=custom.toIntOrNull()
+    AlertDialog(onDismissRequest=onDismiss,title={Text("Timer di spegnimento")},text={LazyColumn(verticalArrangement=Arrangement.spacedBy(4.dp)){
+        items(listOf("Disattivato" to 0,"10 minuti" to 10,"15 minuti" to 15,"30 minuti" to 30,"45 minuti" to 45,"60 minuti" to 60,"90 minuti" to 90,"Fine capitolo" to -1)){(label,value)->
+            ListItem(headlineContent={Text(label)},modifier=Modifier.clip(RoundedCornerShape(10.dp)).clickable{onSelect(value)})
+        }
+        item{HorizontalDivider(Modifier.padding(vertical=6.dp))}
+        item{OutlinedTextField(custom,{custom=it.filter(Char::isDigit).take(3)},label={Text("Minuti personalizzati")},singleLine=true,modifier=Modifier.fillMaxWidth())}
+        item{Button(onClick={customMinutes?.let(onSelect)},enabled=customMinutes?.let{it in 1..180}==true,modifier=Modifier.fillMaxWidth()){Text("Avvia timer personalizzato")}}
+    }},confirmButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
+}
 @Composable private fun <T> ChoiceDialog(title:String,choices:List<Pair<String,T>>,selected:T?,onDismiss:()->Unit,onSelect:(T)->Unit){
     AlertDialog(onDismissRequest=onDismiss,title={Text(title)},text={LazyColumn{items(choices){(label,value)->Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable{onSelect(value)}.padding(vertical=4.dp),verticalAlignment=Alignment.CenterVertically){RadioButton(selected==value,onClick={onSelect(value)});Text(label)}}}},confirmButton={TextButton(onClick=onDismiss){Text("Chiudi")}})
 }
-@Composable private fun EditBookDialog(book:Book,onDismiss:()->Unit,onSave:(String,String,String)->Unit){
+@Composable private fun EditBookDialog(book:Book,onDismiss:()->Unit,onSave:(String,String,String,String,Int?)->Unit){
     var title by remember{mutableStateOf(book.title)};var author by remember{mutableStateOf(book.author)};var narrator by remember{mutableStateOf(book.narrator)}
-    AlertDialog(onDismissRequest=onDismiss,title={Text("Modifica libro")},text={Column(verticalArrangement=Arrangement.spacedBy(10.dp)){
-        OutlinedTextField(title,{title=it.take(1000)},label={Text("Titolo")});OutlinedTextField(author,{author=it.take(1000)},label={Text("Autore")});OutlinedTextField(narrator,{narrator=it.take(1000)},label={Text("Narratore")})
-    }},confirmButton={TextButton(onClick={onSave(title,author,narrator)},enabled=title.isNotBlank()){Text("Salva")}},dismissButton={TextButton(onClick=onDismiss){Text("Annulla")}})
+    var series by remember{mutableStateOf(book.series)};var position by remember{mutableStateOf(book.seriesPosition?.toString().orEmpty())}
+    AlertDialog(onDismissRequest=onDismiss,title={Text("Modifica libro")},text={LazyColumn(verticalArrangement=Arrangement.spacedBy(10.dp)){
+        item{OutlinedTextField(title,{title=it.take(1000)},label={Text("Titolo")},modifier=Modifier.fillMaxWidth())}
+        item{OutlinedTextField(author,{author=it.take(1000)},label={Text("Autore")},modifier=Modifier.fillMaxWidth())}
+        item{OutlinedTextField(narrator,{narrator=it.take(1000)},label={Text("Narratore")},modifier=Modifier.fillMaxWidth())}
+        item{OutlinedTextField(series,{series=it.take(1000)},label={Text("Serie")},placeholder={Text("Es. Il Signore degli Anelli")},modifier=Modifier.fillMaxWidth())}
+        item{OutlinedTextField(position,{position=it.filter(Char::isDigit).take(3)},label={Text("Numero nella serie")},placeholder={Text("Es. 1")},enabled=series.isNotBlank(),modifier=Modifier.fillMaxWidth())}
+    }},confirmButton={TextButton(onClick={onSave(title,author,narrator,series,position.toIntOrNull())},enabled=title.isNotBlank()&&(position.isBlank()||position.toIntOrNull() in 1..999)){Text("Salva")}},dismissButton={TextButton(onClick=onDismiss){Text("Annulla")}})
 }
 @Composable private fun NoteDialog(onDismiss:()->Unit,onSave:(String)->Unit){var note by remember{mutableStateOf("")}
     AlertDialog(onDismissRequest=onDismiss,title={Text("Nuovo segnalibro")},text={OutlinedTextField(note,{note=it.take(10_000)},label={Text("Nota facoltativa")},modifier=Modifier.fillMaxWidth())},confirmButton={TextButton(onClick={onSave(note)}){Text("Salva")}},dismissButton={TextButton(onClick=onDismiss){Text("Annulla")}})

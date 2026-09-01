@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sottovoce</string>
+    <string name="widget_description">Libro e capitolo in ascolto con comandi rapidi</string>
+    <string name="widget_cover">Copertina</string>
+    <string name="widget_chapter">Capitolo</string>
+    <string name="widget_back">Indietro di 10 secondi</string>
+    <string name="widget_play_pause">Riproduci o pausa</string>
+    <string name="widget_timer">Timer</string>
+</resources>
