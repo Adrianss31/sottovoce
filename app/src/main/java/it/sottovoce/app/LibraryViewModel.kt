@@ -157,7 +157,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             c.setPlaybackSpeed(book.speed)
             c.prepare()
         } else if (c.playbackState == Player.STATE_IDLE) c.prepare()
-        c.play(); screen = "player"; snapshot()
+        c.play(); snapshot()
     }
     fun togglePlay() { controller?.let { if (it.isPlaying) it.pause() else { if (it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } }; snapshot() }
     fun seek(position: Long) {
@@ -191,6 +191,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         controller?.setPlaybackSpeed(value)
         now.bookId?.let { id -> viewModelScope.launch { library.update(id) { it.copy(speed = value) } } }
         snapshot()
+    }
+    fun speed(book: Book, value: Float) {
+        if (now.bookId == book.id) {
+            controller?.setPlaybackSpeed(value)
+            snapshot()
+        }
+        viewModelScope.launch { library.update(book.id) { it.copy(speed = value) } }
     }
     fun timer(minutes: Int) { controller?.sendCustomCommand(SessionCommand(PlaybackSignals.TIMER_COMMAND, Bundle.EMPTY), Bundle().apply { putInt("minutes", minutes) }) }
     fun addBookmark(note: String) { now.bookId?.let { id -> task("Salvataggio…") {

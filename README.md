@@ -4,7 +4,7 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato:** versione 0.1.3. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato:** versione 0.1.4. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
@@ -16,7 +16,8 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 - Esporta e ripristina un backup JSON di libreria, progressi, segnalibri e preferenze. **Gli audio non sono inclusi.**
 - Controlla automaticamente gli aggiornamenti all’apertura e mostra un banner; un tocco scarica, verifica e apre l’installazione di Android.
 - Mostra avanzamento, durata e tempo residuo del capitolo corrente, mantenendo anche tempi e avanzamento complessivi del libro.
-- Usa transizioni, cambi di stato, pressioni e progressi animati; la scheda libro separa capitoli e segnalibri e riunisce riepilogo e azioni principali.
+- Riunisce scheda del libro e lettore: copertina, progresso del capitolo, comandi, timer, velocità, capitoli e segnalibri restano nella stessa schermata.
+- Usa animazioni legate al contesto: il libro e la copertina si espandono dalla libreria, il ritorno scorre indietro e le altre destinazioni scorrono in avanti.
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
 

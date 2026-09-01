@@ -79,9 +79,12 @@ class AppSmokeTest {
         val book=seed()
         screenshot("02-library")
         compose.onNodeWithTag("book_${book.id}").performClick()
-        compose.onNodeWithText("Inizia l’ascolto").performClick()
+        compose.onNodeWithTag("book_detail").assertIsDisplayed()
+        compose.onNodeWithText("Inizia l’ascolto").performScrollTo().performClick()
         compose.waitUntil(10_000){vm.now.playing}
-        compose.onNodeWithText("Capitolo introduttivo").assertIsDisplayed()
+        compose.onNodeWithTag("book_detail").assertIsDisplayed()
+        compose.onNodeWithTag("player").assertDoesNotExist()
+        compose.onAllNodesWithText("Capitolo introduttivo").onFirst().assertIsDisplayed()
         compose.runOnIdle {
             assertEquals("Capitolo introduttivo",vm.controller?.mediaMetadata?.title?.toString())
             assertTrue(requireNotNull(vm.controller).duration in 14_000L..16_000L)

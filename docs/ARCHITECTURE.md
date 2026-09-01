@@ -2,6 +2,8 @@
 
 App nativa Kotlin, Jetpack Compose Material 3. Un’unica Activity conserva il ViewModel durante i cambiamenti di configurazione. Il servizio Media3 gestisce audio e sessione indipendentemente dallo schermo aperto.
 
+L’interfaccia non separa la scheda del libro dal lettore: la stessa destinazione mostra metadati, comandi di ascolto, progresso, capitoli e segnalibri. L’avvio della riproduzione aggiorna i controlli sul posto e non cambia schermata. La navigazione distingue apertura del libro, avanzamento verso altre destinazioni e ritorno, con animazioni coerenti con la direzione.
+
 ## Dati locali
 
 SQLiteOpenHelper, database `library.db`, schema 1, WAL e transazioni per importazione e ripristino. Le entità serializzate JSON consentono di aggiungere campi con valori predefiniti. Modifiche allo schema SQL richiederanno una migrazione esplicita: non esiste cancellazione automatica del database in caso di errore di versione.
