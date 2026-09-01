@@ -15,6 +15,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -24,8 +25,11 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import it.sottovoce.app.MainActivity
+import it.sottovoce.app.R
 import it.sottovoce.app.SottovoceApp
 import it.sottovoce.app.data.Book
+import it.sottovoce.app.data.chapterPlaybackStart
+import it.sottovoce.app.data.chapterTimeline
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
@@ -34,13 +38,21 @@ object PlaybackSignals {
     val error = MutableStateFlow<String?>(null)
     val timer = MutableStateFlow("")
     const val TIMER_COMMAND = "it.sottovoce.SET_TIMER"
+    const val TOGGLE_TIMER_COMMAND = "it.sottovoce.TOGGLE_TIMER_30"
 }
 
-fun Book.mediaItems(): List<MediaItem> = tracks.mapIndexed { index, track ->
-    val extras = Bundle().apply { putString("bookId", id); putInt("trackIndex", index) }
-    MediaItem.Builder().setMediaId("$id/${track.id}").setUri(track.uri)
-        .setMediaMetadata(MediaMetadata.Builder().setTitle(title).setArtist(author)
-            .setSubtitle(track.name).setAlbumTitle(title).setExtras(extras)
+fun Book.mediaItems(): List<MediaItem> = chapterTimeline().map { chapter ->
+    val track = tracks[chapter.trackIndex]
+    val extras = Bundle().apply {
+        putString("bookId", id); putInt("trackIndex", chapter.trackIndex)
+        putLong("chapterStartMs", chapter.startMs); putInt("chapterOrdinal", chapter.ordinal); putInt("chapterTotal", chapter.total)
+    }
+    val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(chapter.startMs).apply {
+        if (chapter.endMs > chapter.startMs) setEndPositionMs(chapter.endMs)
+    }.build()
+    MediaItem.Builder().setMediaId("$id/${track.id}/${chapter.startMs}").setUri(track.uri).setClippingConfiguration(clipping)
+        .setMediaMetadata(MediaMetadata.Builder().setTitle(chapter.title).setArtist(author)
+            .setSubtitle("Capitolo ${chapter.ordinal} di ${chapter.total}").setAlbumTitle(title).setExtras(extras)
             .setArtworkUri(coverPath?.let { Uri.fromFile(File(it)) }).build()).build()
 }
 
@@ -54,6 +66,21 @@ class PlaybackService : MediaSessionService() {
     private var chapterEnd = -1L
     private var chapterTrack = -1
     private var ticks = 0
+    private val timerCommand = SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND, Bundle.EMPTY)
+    private fun mediaButtons() = listOf(
+        CommandButton.Builder(CommandButton.ICON_SKIP_BACK_10).setDisplayName("Indietro 10 secondi")
+            .setPlayerCommand(Player.COMMAND_SEEK_BACK).setSlots(CommandButton.SLOT_BACK).build(),
+        CommandButton.Builder(CommandButton.ICON_UNDEFINED).setCustomIconResId(R.drawable.ic_timer_notification)
+            .setDisplayName(if (deadline > 0) "Disattiva timer" else "Timer 30 minuti")
+            .setSessionCommand(timerCommand).setSlots(CommandButton.SLOT_FORWARD).build(),
+    )
+    private fun updateMediaButtons() {
+        session?.let { mediaSession ->
+            val notification = mediaSession.mediaNotificationControllerInfo
+            if (notification == null) mediaSession.setMediaButtonPreferences(mediaButtons())
+            else mediaSession.setMediaButtonPreferences(notification, mediaButtons())
+        }
+    }
     private val tick = object : Runnable {
         override fun run() {
             if (deadline > 0 && SystemClock.elapsedRealtime() >= deadline) stopTimer(pause = true)
@@ -66,7 +93,7 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         val prefs = getSharedPreferences("preferences", MODE_PRIVATE)
         player = ExoPlayer.Builder(this)
-            .setSeekBackIncrementMs(prefs.getInt("skipBack", 15) * 1000L)
+            .setSeekBackIncrementMs(10_000L)
             .setSeekForwardIncrementMs(prefs.getInt("skipForward", 30) * 1000L)
             .build().apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build(), true)
@@ -92,14 +119,22 @@ class PlaybackService : MediaSessionService() {
                 })
             }
         val activity = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-        session = MediaSession.Builder(this, player).setSessionActivity(activity).setCallback(object : MediaSession.Callback {
+        session = MediaSession.Builder(this, player).setSessionActivity(activity).setMediaButtonPreferences(mediaButtons()).setCallback(object : MediaSession.Callback {
             override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                 if (controller.packageName != packageName && !controller.isTrusted) return MediaSession.ConnectionResult.reject()
                 val base = super.onConnect(session, controller)
-                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
                     .setAvailableSessionCommands(base.availableSessionCommands.buildUpon()
                         .add(SessionCommand(PlaybackSignals.TIMER_COMMAND, Bundle.EMPTY))
+                        .add(timerCommand)
                         .add(SessionCommand("it.sottovoce.STOP_AND_SAVE", Bundle.EMPTY)).build()).build()
+                if (!session.isMediaNotificationController(controller)) return builder
+                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                    .setAvailableSessionCommands(base.availableSessionCommands.buildUpon().add(timerCommand).build())
+                    .setAvailablePlayerCommands(base.availablePlayerCommands.buildUpon()
+                        .remove(Player.COMMAND_SEEK_TO_PREVIOUS).remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                        .remove(Player.COMMAND_SEEK_TO_NEXT).remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM).build())
+                    .setMediaButtonPreferences(mediaButtons()).build()
             }
             override fun onAddMediaItems(session: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
                 val known = app.library.books.value.flatMap { it.mediaItems() }.associateBy { it.mediaId }
@@ -109,6 +144,11 @@ class PlaybackService : MediaSessionService() {
                 return Futures.immediateFuture(resolved)
             }
             override fun onCustomCommand(session: MediaSession, controller: MediaSession.ControllerInfo, command: SessionCommand, args: Bundle): ListenableFuture<SessionResult> {
+                if (command.customAction == PlaybackSignals.TOGGLE_TIMER_COMMAND &&
+                    (session.isMediaNotificationController(controller) || controller.packageName == packageName)) {
+                    configureTimer(if (deadline > 0) 0 else 30)
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
                 if (controller.packageName != packageName)
                     return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
                 if (command.customAction == "it.sottovoce.STOP_AND_SAVE") {
@@ -116,7 +156,7 @@ class PlaybackService : MediaSessionService() {
                     val extras = player.currentMediaItem?.mediaMetadata?.extras
                     val id = extras?.getString("bookId")
                     val index = extras?.getInt("trackIndex") ?: 0
-                    val position = player.currentPosition
+                    val position = (extras?.getLong("chapterStartMs", 0) ?: 0L) + player.currentPosition
                     val speed = player.playbackParameters.speed
                     player.pause(); player.stop(); player.clearMediaItems(); stopTimer(false)
                     app.scope.launch {
@@ -140,7 +180,8 @@ class PlaybackService : MediaSessionService() {
                         val book = app.library.books.value.firstOrNull { !it.needsRelink && it.lastPlayedAt > 0 }
                             ?: throw IllegalStateException("Nessun ascolto da riprendere.")
                         player.setPlaybackSpeed(book.speed)
-                        future.set(MediaSession.MediaItemsWithStartPosition(book.mediaItems(), book.trackIndex, book.positionMs))
+                        val start = book.chapterPlaybackStart()
+                        future.set(MediaSession.MediaItemsWithStartPosition(book.mediaItems(), start.itemIndex, start.positionMs))
                     } catch (e: Exception) { future.setException(e) }
                 }
                 return future
@@ -153,29 +194,28 @@ class PlaybackService : MediaSessionService() {
         val extras = player.currentMediaItem?.mediaMetadata?.extras ?: return
         val id = extras.getString("bookId") ?: return
         val index = extras.getInt("trackIndex")
-        val position = player.currentPosition.coerceAtLeast(0)
+        val position = (extras.getLong("chapterStartMs", 0) + player.currentPosition).coerceAtLeast(0)
         val speed = player.playbackParameters.speed
         app.scope.launch { app.library.savePosition(id, index, position, speed, finished) }
     }
     private fun configureTimer(minutes: Int) {
         stopTimer(false)
         if (minutes == -1) {
-            val id = player.currentMediaItem?.mediaMetadata?.extras?.getString("bookId")
-            val book = app.library.books.value.find { it.id == id } ?: return
             chapterTrack = player.currentMediaItemIndex
-            val track = book.tracks.getOrNull(chapterTrack) ?: return
-            chapterEnd = track.chapters.firstOrNull { it.startMs > player.currentPosition + 500 }?.startMs ?: -1L
-            player.pauseAtEndOfMediaItems = chapterEnd < 0
+            chapterEnd = -1L
+            player.pauseAtEndOfMediaItems = true
             PlaybackSignals.timer.value = "Fine capitolo"
         } else if (minutes in 1..180) {
             deadline = SystemClock.elapsedRealtime() + minutes * 60_000L
             PlaybackSignals.timer.value = "$minutes minuti"
         }
+        updateMediaButtons()
     }
     private fun stopTimer(pause: Boolean) {
         deadline = 0; chapterEnd = -1; chapterTrack = -1
         PlaybackSignals.timer.value = ""
         if (::player.isInitialized) { player.pauseAtEndOfMediaItems = false; if (pause) player.pause() }
+        updateMediaButtons()
     }
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
     override fun onDestroy() {

@@ -16,6 +16,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import it.sottovoce.app.data.*
+import it.sottovoce.app.playback.PlaybackSignals
 import kotlinx.coroutines.runBlocking
 import org.junit.*
 import org.junit.Assert.*
@@ -77,10 +78,14 @@ class AppSmokeTest {
     @Test fun playerPersistsSeekSpeedAndBookmark() {
         val book=seed()
         screenshot("02-library")
-        compose.onNodeWithText(book.title).performClick()
-        compose.onNodeWithText("Ascolta").performClick()
+        compose.onNodeWithTag("book_${book.id}").performClick()
+        compose.onNodeWithText("Inizia l’ascolto").performClick()
         compose.waitUntil(10_000){vm.now.playing}
         compose.onNodeWithText("Capitolo introduttivo").assertIsDisplayed()
+        assertEquals("Capitolo introduttivo",vm.controller?.mediaMetadata?.title?.toString())
+        assertTrue(requireNotNull(vm.controller).duration in 14_000L..16_000L)
+        compose.runOnIdle{vm.seek(20_000)}
+        compose.waitUntil(5000){vm.controller?.mediaMetadata?.title?.toString()=="Seconda parte"&&vm.now.position>=19_000}
         compose.runOnIdle{vm.seek(10_000);vm.speed(1.5f)}
         compose.waitUntil(10_000){app.library.books.value.first().positionMs>=9000}
         compose.onNodeWithTag("play_pause").performClick()
@@ -94,6 +99,11 @@ class AppSmokeTest {
         assertEquals(1,app.library.bookmarks.value.size)
         assertEquals(1.5f,app.library.books.value.first().speed,0f)
         assertTrue(app.library.books.value.first().positionMs>=9000)
+        val timerCommand=SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND,Bundle.EMPTY)
+        vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY).get(5,TimeUnit.SECONDS)
+        compose.waitUntil(5000){PlaybackSignals.timer.value=="30 minuti"}
+        vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY).get(5,TimeUnit.SECONDS)
+        compose.waitUntil(5000){PlaybackSignals.timer.value.isEmpty()}
         runBlocking{app.library.load()}
         assertEquals("Un passaggio da ricordare",app.library.bookmarks.value.single().note)
     }

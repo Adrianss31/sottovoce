@@ -18,8 +18,8 @@ android {
         applicationId = "it.sottovoce.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("releaseCode").orNull?.toInt() ?: 3
-        versionName = providers.gradleProperty("releaseName").orNull ?: "0.1.2"
+        versionCode = providers.gradleProperty("releaseCode").orNull?.toInt() ?: 4
+        versionName = providers.gradleProperty("releaseName").orNull ?: "0.1.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://github.com/Adrianss31/sottovoce/releases/latest/download/update.json\"")
         buildConfigField("String", "UPDATE_PUBLIC_KEY", "\"$updateKey\"")

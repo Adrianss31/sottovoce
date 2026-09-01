@@ -14,7 +14,7 @@ Il backup esportato elimina URI e percorsi, conservando metadati e dati di ascol
 
 ## Riproduzione
 
-ExoPlayer e MediaSessionService, audio focus con contenuto parlato, wake lock locale, notifica di sistema e gestione dello scollegamento delle cuffie. Il servizio salva periodicamente la posizione (circa ogni 3 secondi) e agli eventi principali; un arresto improvviso può far perdere gli ultimissimi secondi. Velocità conservata per libro.
+ExoPlayer e MediaSessionService, audio focus con contenuto parlato, wake lock locale, notifica di sistema e gestione dello scollegamento delle cuffie. Ogni capitolo viene esposto alla sessione come MediaItem ritagliato sulla sorgente originale: Android riceve titolo, durata e posizione relativi al capitolo, mentre l’app converte sempre salvataggi e ricerche nella posizione assoluta della traccia. I controlli multimediali preferiti sono play/pausa, indietro 10 secondi e un comando personalizzato che attiva o disattiva un timer di 30 minuti. Il servizio salva periodicamente la posizione (circa ogni 3 secondi) e agli eventi principali; un arresto improvviso può far perdere gli ultimissimi secondi. Velocità conservata per libro.
 
 Le richieste esterne non possono fornire URL arbitrari al servizio: gli elementi della sessione vengono risolti per identificatore nella libreria locale. Si accettano controller dell’app e controller considerati affidabili dal sistema. I comandi per fermare/salvare e impostare il timer sono riservati all’app stessa.
 

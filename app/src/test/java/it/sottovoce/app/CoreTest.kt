@@ -34,6 +34,7 @@ class CoreTest {
         assertEquals(45_000,book.currentChapter()!!.remainingMs(book.positionMs))
         assertEquals(ChapterStatus.COMPLETED,book.chapterStatus(chapters[0]))
         assertEquals(ChapterStatus.CURRENT,book.chapterStatus(chapters[1]))
+        assertEquals(ChapterPlaybackStart(1,15_000),book.chapterPlaybackStart())
     }
     @Test fun restoreNeverTrustsPathsFromBackupAndKeepsListeningData() {
         val book=Book(title="Libro",tracks=listOf(AudioTrack(uri="file:///data/private",name="audio",owned=true)),positionMs=12_000,coverPath="/etc/secret")

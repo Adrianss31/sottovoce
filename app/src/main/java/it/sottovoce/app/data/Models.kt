@@ -52,6 +52,7 @@ data class BookChapter(
 }
 
 enum class ChapterStatus { COMPLETED, CURRENT, UPCOMING }
+data class ChapterPlaybackStart(val itemIndex: Int, val positionMs: Long)
 
 fun Book.chapterTimeline(): List<BookChapter> {
     val partial = tracks.flatMapIndexed { trackIndex, track ->
@@ -79,6 +80,11 @@ fun Book.chapterStatus(chapter: BookChapter): ChapterStatus {
         chapter.ordinal == current.ordinal -> ChapterStatus.CURRENT
         else -> ChapterStatus.COMPLETED
     }
+}
+
+fun Book.chapterPlaybackStart(index: Int = trackIndex, position: Long = positionMs): ChapterPlaybackStart {
+    val chapter = currentChapter(index, position) ?: return ChapterPlaybackStart(0, position.coerceAtLeast(0))
+    return ChapterPlaybackStart(chapter.ordinal - 1, (position - chapter.startMs).coerceIn(0, chapter.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE))
 }
 @Serializable data class Bookmark(
     val id: String = UUID.randomUUID().toString(), val bookId: String,

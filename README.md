@@ -4,18 +4,19 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato:** versione 0.1.2. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato:** versione 0.1.3. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
 - Importa file locali o cartelle, con anteprima del titolo, autore e ordine delle tracce.
 - Collega i file originali oppure ne conserva una copia nello spazio privato dell’app.
-- Organizza libri con ricerca, ordinamento, filtri, copertina incorporata e metadati modificabili.
-- Riproduce in sottofondo con controlli nella notifica, gestione del focus audio e pausa quando vengono scollegate le cuffie.
+- Organizza libri in una libreria visuale a griglia con ricerca, ordinamento, filtri, copertina incorporata e metadati modificabili.
+- Riproduce in sottofondo con avanzamento del capitolo nella scheda multimediale di Android, play/pausa, indietro 10 secondi e timer rapido da 30 minuti.
 - Salva posizione e velocità per ciascun libro; offre salti, velocità 0,5–3×, timer e segnalibri con note.
 - Esporta e ripristina un backup JSON di libreria, progressi, segnalibri e preferenze. **Gli audio non sono inclusi.**
 - Controlla automaticamente gli aggiornamenti all’apertura e mostra un banner; un tocco scarica, verifica e apre l’installazione di Android.
 - Mostra avanzamento, durata e tempo residuo del capitolo corrente, mantenendo anche tempi e avanzamento complessivi del libro.
+- Usa transizioni, cambi di stato, pressioni e progressi animati; la scheda libro separa capitoli e segnalibri e riunisce riepilogo e azioni principali.
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
 

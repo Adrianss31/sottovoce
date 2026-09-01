@@ -86,8 +86,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     private fun snapshot() {
-        controller?.let { c -> now = NowPlaying(c.currentMediaItem?.mediaMetadata?.extras?.getString("bookId"),
-            c.currentMediaItemIndex.coerceAtLeast(0), c.currentPosition.coerceAtLeast(0), c.duration.coerceAtLeast(0), c.isPlaying, c.playbackParameters.speed) }
+        controller?.let { c ->
+            val extras = c.currentMediaItem?.mediaMetadata?.extras
+            val bookId = extras?.getString("bookId")
+            val trackIndex = extras?.getInt("trackIndex", 0) ?: 0
+            val chapterStart = extras?.getLong("chapterStartMs", 0) ?: 0
+            val trackDuration = library.books.value.find { it.id == bookId }?.tracks?.getOrNull(trackIndex)?.durationMs
+                ?: (chapterStart + c.duration.coerceAtLeast(0))
+            now = NowPlaying(bookId, trackIndex, chapterStart + c.currentPosition.coerceAtLeast(0),
+                trackDuration, c.isPlaying, c.playbackParameters.speed)
+        }
     }
     fun task(label: String, action: suspend () -> Unit) {
         if (busy != null) return
@@ -143,27 +151,40 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         val c = controller ?: run { message = "Il lettore si sta avviando. Riprova fra un istante."; return }
         PlaybackSignals.error.value = null
         if (now.bookId != book.id || index != null || c.playbackState == Player.STATE_ENDED) {
-            val start = (index ?: book.trackIndex).coerceIn(book.tracks.indices)
-            c.setMediaItems(book.mediaItems(), start, (position ?: book.positionMs).coerceAtLeast(0))
+            val track = (index ?: book.trackIndex).coerceIn(book.tracks.indices)
+            val start = book.chapterPlaybackStart(track, (position ?: book.positionMs).coerceAtLeast(0))
+            c.setMediaItems(book.mediaItems(), start.itemIndex, start.positionMs)
             c.setPlaybackSpeed(book.speed)
             c.prepare()
         } else if (c.playbackState == Player.STATE_IDLE) c.prepare()
         c.play(); screen = "player"; snapshot()
     }
     fun togglePlay() { controller?.let { if (it.isPlaying) it.pause() else { if (it.playbackState == Player.STATE_IDLE) it.prepare(); it.play() } }; snapshot() }
-    fun seek(position: Long) { controller?.seekTo(position.coerceAtLeast(0)); snapshot() }
-    fun skip(seconds: Int) {
+    fun seek(position: Long) {
         val c = controller ?: return
-        val target = c.currentPosition + seconds * 1000L
-        when {
-            target < 0 && c.hasPreviousMediaItem() -> {
-                val book = library.books.value.find { it.id == now.bookId }
-                val previous = now.trackIndex - 1
-                c.seekTo(previous, ((book?.tracks?.getOrNull(previous)?.durationMs ?: 0) + target).coerceAtLeast(0))
-            }
-            c.duration > 0 && target > c.duration && c.hasNextMediaItem() -> c.seekTo(c.currentMediaItemIndex + 1, target - c.duration)
-            else -> c.seekTo(target.coerceIn(0, c.duration.takeIf { it > 0 } ?: Long.MAX_VALUE))
+        val book = library.books.value.find { it.id == now.bookId }
+        if (book == null) c.seekTo(position.coerceAtLeast(0)) else {
+            val start = book.chapterPlaybackStart(now.trackIndex, position.coerceAtLeast(0))
+            c.seekTo(start.itemIndex, start.positionMs)
         }
+        snapshot()
+    }
+    fun skip(seconds: Int) {
+        val book = library.books.value.find { it.id == now.bookId } ?: return
+        var track = now.trackIndex
+        var target = now.position + seconds * 1000L
+        when {
+            target < 0 && track > 0 -> {
+                track -= 1
+                target = (book.tracks[track].durationMs + target).coerceAtLeast(0)
+            }
+            book.tracks[track].durationMs > 0 && target > book.tracks[track].durationMs && track < book.tracks.lastIndex -> {
+                target -= book.tracks[track].durationMs
+                track += 1
+            }
+        }
+        val start = book.chapterPlaybackStart(track, target.coerceIn(0, book.tracks[track].durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE))
+        controller?.seekTo(start.itemIndex, start.positionMs)
         snapshot()
     }
     fun speed(value: Float) {
