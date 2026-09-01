@@ -4,7 +4,7 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato:** prima versione 0.1.0. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato:** versione 0.1.1. Scarica l’APK dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
@@ -30,7 +30,7 @@ La build debug ha un’identità separata (`it.sottovoce.app.debug`) e non viene
 
 MP3, M4B/M4A/MP4 audio, AAC, OGG, OPUS, FLAC e WAV, nei limiti dei codec supportati dal dispositivo e da Media3. Nessun supporto DRM/AAX. La selezione multipla crea un solo libro; nella selezione di una cartella, ogni sottocartella di primo livello è proposta come libro separato. Le tracce vengono ordinate numericamente, con possibilità di riordinarle prima della conferma.
 
-I capitoli M4B vengono letti quando sono presenti nel formato Nero `chpl`. I capitoli QuickTime non sono ancora implementati: il file rimane ascoltabile come traccia singola. Per libri composti da più file, ogni file è una traccia navigabile. Le copertine sono ricavate dai metadati incorporati; in loro assenza viene mostrata una copertina tipografica.
+I capitoli M4B vengono letti sia dal formato Nero `chpl`, sia dalle tracce di capitoli QuickTime referenziate (`chap`) usate da molti file riconosciuti da ffprobe e Audiobookshelf. I titoli UTF-8 e UTF-16 sono supportati. Per libri composti da più file, ogni file è una traccia navigabile. Le copertine sono ricavate dai metadati incorporati; in loro assenza viene mostrata una copertina tipografica.
 
 Se sposti o cancelli un originale collegato, ricollegalo dalla scheda del libro. Usa la stessa registrazione, lo stesso numero di file e lo stesso ordine: posizioni e segnalibri dipendono da essi. La rimozione di un libro non cancella mai gli originali scelti dal dispositivo.
 
@@ -57,7 +57,7 @@ La firma locale evita di trasferire le chiavi private a GitHub. Il repository co
 
 ## Evoluzioni possibili
 
-Capitoli QuickTime, Android Auto dedicato, verifica più estesa su dispositivi fisici e versioni Android diverse, recupero assistito dei file dopo un ripristino, backup opzionale comprensivo degli audio. Queste funzioni non sono incluse nella 0.1.0. L’aggiunta di download di audiolibri rimane esclusa dall’ambito attuale.
+Android Auto dedicato, verifica più estesa su dispositivi fisici e versioni Android diverse, recupero assistito dei file dopo un ripristino, backup opzionale comprensivo degli audio. Queste funzioni non sono incluse. L’aggiunta di download di audiolibri rimane esclusa dall’ambito attuale.
 
 ## Licenza
 

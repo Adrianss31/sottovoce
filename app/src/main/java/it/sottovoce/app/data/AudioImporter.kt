@@ -78,14 +78,10 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
                 context.contentResolver.openInputStream(uri)?.use { require(it.read() >= 0) { "File vuoto: $name" } }
                     ?: error("File non accessibile: $name")
             } finally { retriever.release() }
-            val chapters = if (name.substringAfterLast('.').lowercase() in setOf("m4b", "m4a", "mp4")) {
-                runCatching {
-                    context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                        FileInputStream(pfd.fileDescriptor).use { Mp4Chapters.read(it.channel) }
-                    }.orEmpty()
-                }.getOrDefault(emptyList())
-            } else emptyList()
-            AudioTrack(uri = uri.toString(), name = name, durationMs = duration.coerceAtLeast(0), size = size, chapters = chapters)
+            val isMp4 = name.substringAfterLast('.').lowercase() in setOf("m4b", "m4a", "mp4")
+            val chapters = if (isMp4) readChapters(uri).getOrDefault(emptyList()) else emptyList()
+            AudioTrack(uri = uri.toString(), name = name, durationMs = duration.coerceAtLeast(0), size = size,
+                chapters = chapters, chapterParserVersion = if (isMp4) 2 else 0)
         }.sortedWith { a, b -> NaturalOrder.compare(a.name, b.name) }
         return Book(title = album.ifBlank { folderName ?: tracks.first().name.substringBeforeLast('.') }, author = author, narrator = narrator, tracks = tracks)
     }
@@ -131,7 +127,11 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
                     }
                     require(partial.length() > 0 && (track.size == 0L || partial.length() == track.size)) { "Copia incompleta: ${track.name}" }
                     require(partial.renameTo(target)) { "Impossibile completare la copia." }
-                    track.copy(uri = Uri.fromFile(target).toString(), owned = true)
+                    val localUri = Uri.fromFile(target)
+                    val copiedChapters = if (extension in setOf("m4b", "m4a", "mp4"))
+                        readChapters(localUri).getOrDefault(track.chapters) else track.chapters
+                    track.copy(uri = localUri.toString(), owned = true, chapters = copiedChapters,
+                        chapterParserVersion = if (extension in setOf("m4b", "m4a", "mp4")) 2 else track.chapterParserVersion)
                 }
                 book.copy(tracks = tracks, coverPath = saveCover(Uri.parse(book.tracks.first().uri), directory))
             }
@@ -140,10 +140,34 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
                 library.add(saved)
                 committed = true
             }
-            saved.size
+        saved.size
         } catch (e: Exception) {
             if (!committed) created.forEach { it.deleteRecursively() }
             throw e
+        }
+    }
+
+    /** Re-reads chapter metadata added by newer parser versions without changing listening data. */
+    suspend fun refreshChapters() = withContext(Dispatchers.IO) {
+        library.books.value.toList().forEach { book ->
+            val refreshed = book.tracks.mapNotNull { track ->
+                val isMp4 = track.name.substringAfterLast('.').lowercase() in setOf("m4b", "m4a", "mp4")
+                if (!isMp4 || track.chapterParserVersion >= 2 || !library.isSafeAudioUri(track.uri)) null
+                else readChapters(Uri.parse(track.uri)).getOrNull()?.let { track.id to track.copy(chapters = it, chapterParserVersion = 2) }
+            }.toMap()
+            if (refreshed.isNotEmpty()) library.update(book.id) { current ->
+                current.copy(tracks = current.tracks.map { refreshed[it.id] ?: it })
+            }
+        }
+    }
+
+    private fun readChapters(uri: Uri): Result<List<Chapter>> = runCatching {
+        when (uri.scheme) {
+            "content" -> context.contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                FileInputStream(pfd.fileDescriptor).use { Mp4Chapters.read(it.channel) }
+            } ?: error("File non accessibile")
+            "file" -> FileInputStream(requireNotNull(uri.path)).use { Mp4Chapters.read(it.channel) }
+            else -> error("Origine non supportata")
         }
     }
     private fun saveCover(uri: Uri, directory: File): String? = runCatching {

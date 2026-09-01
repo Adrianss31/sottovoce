@@ -15,6 +15,7 @@ val AppJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     val size: Long = 0,
     val owned: Boolean = false,
     val chapters: List<Chapter> = emptyList(),
+    val chapterParserVersion: Int = 0,
 )
 @Serializable data class Book(
     val id: String = UUID.randomUUID().toString(),
@@ -65,6 +66,7 @@ fun validateBackup(backup: Backup): Backup {
         b.tracks.forEach { t ->
             require(t.id.matches(Regex("[a-zA-Z0-9-]{1,80}")))
             require(t.durationMs >= 0 && t.size >= 0 && t.name.length <= 1000 && t.chapters.size <= 5000)
+            require(t.chapterParserVersion in 0..2)
             require(t.chapters.all { it.startMs >= 0 && it.title.length <= 1000 })
         }
     }

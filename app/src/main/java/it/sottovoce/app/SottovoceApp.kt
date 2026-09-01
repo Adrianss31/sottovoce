@@ -2,6 +2,7 @@ package it.sottovoce.app
 
 import android.app.Application
 import it.sottovoce.app.data.LibraryRepository
+import it.sottovoce.app.data.AudioImporter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,6 +15,6 @@ class SottovoceApp : Application() {
     override fun onCreate() {
         super.onCreate()
         library = LibraryRepository(this)
-        scope.launch { library.load() }
+        scope.launch { library.load(); AudioImporter(this@SottovoceApp, library).refreshChapters() }
     }
 }

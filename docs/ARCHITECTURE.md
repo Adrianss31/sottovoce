@@ -18,7 +18,9 @@ ExoPlayer e MediaSessionService, audio focus con contenuto parlato, wake lock lo
 
 Le richieste esterne non possono fornire URL arbitrari al servizio: gli elementi della sessione vengono risolti per identificatore nella libreria locale. Si accettano controller dell’app e controller considerati affidabili dal sistema. I comandi per fermare/salvare e impostare il timer sono riservati all’app stessa.
 
-Il parser dei capitoli M4B legge box Nero chpl con limiti di dimensione, profondità e conteggio. In caso di metadati sconosciuti o malformati torna alla singola traccia. Riferimento del formato: [demuxer MOV di FFmpeg](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mov.c), funzione mov_read_chpl. Non include codice o librerie FFmpeg.
+Il parser dei capitoli M4B legge box Nero chpl e tracce di testo QuickTime referenziate da `tref/chap`. Per queste ultime interpreta tempi, dimensioni, mappatura campioni/chunk, offset a 32 o 64 bit e titoli UTF-8/UTF-16, senza caricare l’audiolibro in memoria. Tabelle, campioni e conteggi hanno limiti espliciti; metadati sconosciuti o malformati tornano alla singola traccia. Riferimenti del formato: [Chapter lists di Apple](https://developer.apple.com/documentation/quicktime-file-format/chapter_lists), [Text sample data di Apple](https://developer.apple.com/documentation/quicktime-file-format/text_sample_data) e [demuxer MOV di FFmpeg](https://github.com/FFmpeg/FFmpeg/blob/master/libavformat/mov.c). Non include codice o librerie FFmpeg.
+
+Dalla versione 0.1.1, al primo avvio vengono riesaminati automaticamente gli M4B importati con il parser precedente. L’operazione aggiorna soltanto i capitoli e conserva posizione, velocità e segnalibri.
 
 ## Aggiornamenti
 

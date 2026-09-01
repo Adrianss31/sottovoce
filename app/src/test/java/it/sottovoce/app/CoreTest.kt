@@ -6,6 +6,9 @@ import kotlinx.serialization.encodeToString
 import org.junit.Assert.*
 import org.junit.Test
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.channels.FileChannel
+import java.nio.file.StandardOpenOption
 import java.security.KeyPairGenerator
 import java.security.Signature
 import java.util.Base64
@@ -44,6 +47,34 @@ class CoreTest {
         val bytes=ByteBuffer.allocate(9+9+name.size).putInt(0x01000000).putInt(0).put(1).putLong(125_000_000).put(name.size.toByte()).put(name).array()
         assertEquals(listOf(Chapter("Primo capitolo",12_500)),Mp4Chapters.parsePayload(bytes))
         assertTrue(Mp4Chapters.parsePayload(bytes.copyOf(7)).isEmpty())
+    }
+    @Test fun quickTimeChapterTrackReadsUtf8AndUtf16Titles() {
+        fun box(type:String,vararg payload:ByteArray):ByteArray {
+            val size=8+payload.sumOf{it.size}
+            return ByteBuffer.allocate(size).order(ByteOrder.BIG_ENDIAN).putInt(size).put(type.toByteArray(Charsets.ISO_8859_1)).apply{payload.forEach{put(it)}}.array()
+        }
+        fun ints(vararg values:Int)=ByteBuffer.allocate(values.size*4).order(ByteOrder.BIG_ENDIAN).apply{values.forEach(::putInt)}.array()
+        fun text(bytes:ByteArray)=ByteBuffer.allocate(2+bytes.size).order(ByteOrder.BIG_ENDIAN).putShort(bytes.size.toShort()).put(bytes).array()
+        fun tkhd(id:Int)=box("tkhd",ints(0,0,0,id,0))
+        fun mdhd(scale:Int)=box("mdhd",ints(0,0,0,scale,10_000))
+        fun hdlr(type:String)=box("hdlr",ints(0,0),type.toByteArray(Charsets.ISO_8859_1))
+        val first=text("Introduzione".toByteArray())
+        val second=text(byteArrayOf(0xfe.toByte(),0xff.toByte())+"Capitolo due".toByteArray(Charsets.UTF_16BE))
+        val mdat=box("mdat",first,second)
+        val referenced=box("trak",tkhd(1),box("tref",box("chap",ints(2))),box("mdia",mdhd(1000),hdlr("soun")))
+        val stsd=box("stsd",ints(0,1,8),"text".toByteArray())
+        val stts=box("stts",ints(0,1,2,5000))
+        val stsc=box("stsc",ints(0,1,1,2,1))
+        val stsz=box("stsz",ints(0,0,2,first.size,second.size))
+        val stco=box("stco",ints(0,1,8))
+        val chapters=box("trak",tkhd(2),box("mdia",mdhd(1000),hdlr("text"),box("minf",box("stbl",stsd,stts,stsc,stsz,stco))))
+        val file=kotlin.io.path.createTempFile("sottovoce-chapters", ".m4b").toFile()
+        try {
+            file.writeBytes(mdat+box("moov",referenced,chapters))
+            FileChannel.open(file.toPath(),StandardOpenOption.READ).use { channel ->
+                assertEquals(listOf(Chapter("Introduzione",0),Chapter("Capitolo due",5000)),Mp4Chapters.read(channel))
+            }
+        } finally {file.delete()}
     }
     private val keys=KeyPairGenerator.getInstance("RSA").apply {initialize(2048)}.generateKeyPair()
     private val publicKey=Base64.getEncoder().encodeToString(keys.public.encoded)
