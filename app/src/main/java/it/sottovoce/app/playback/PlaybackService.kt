@@ -3,6 +3,7 @@ package it.sottovoce.app.playback
 import android.app.PendingIntent
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -18,6 +19,13 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
+import androidx.media3.exoplayer.source.ClippingMediaSource
+import androidx.media3.exoplayer.source.MediaParserExtractorAdapter
+import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -100,10 +108,13 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val prefs = getSharedPreferences("preferences", MODE_PRIVATE)
-        player = ExoPlayer.Builder(this, DefaultRenderersFactory(this).setEnableDecoderFallback(true))
-            .setSeekBackIncrementMs(10_000L)
+        val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+        val playerBuilder = if (Build.VERSION.SDK_INT >= 30) ExoPlayer.Builder(this, renderers, PlatformMediaSourceFactory(this))
+            else ExoPlayer.Builder(this, renderers)
+        player = playerBuilder.setSeekBackIncrementMs(10_000L)
             .setSeekForwardIncrementMs(prefs.getInt("skipForward", 30) * 1000L)
-            .build().apply {
+            .build()
+            .apply {
                 setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_SPEECH).build(), true)
                 setHandleAudioBecomingNoisy(true)
                 setWakeMode(C.WAKE_MODE_LOCAL)
@@ -202,6 +213,27 @@ class PlaybackService : MediaSessionService() {
             }
         }).build()
         handler.post(tick)
+    }
+
+    @androidx.annotation.RequiresApi(30)
+    private class PlatformMediaSourceFactory(context: android.content.Context) : MediaSource.Factory {
+        private val delegate = ProgressiveMediaSource.Factory(
+            DefaultDataSource.Factory(context), MediaParserExtractorAdapter.Factory()
+        )
+
+        override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+            val source = delegate.createMediaSource(mediaItem)
+            val clipping = mediaItem.clippingConfiguration
+            return if (clipping == MediaItem.ClippingConfiguration.UNSET) source
+                else ClippingMediaSource.Builder(source).setClippingConfiguration(clipping).build()
+        }
+        override fun getSupportedTypes(): IntArray = delegate.supportedTypes
+        override fun setDrmSessionManagerProvider(provider: DrmSessionManagerProvider): MediaSource.Factory {
+            delegate.setDrmSessionManagerProvider(provider); return this
+        }
+        override fun setLoadErrorHandlingPolicy(policy: LoadErrorHandlingPolicy): MediaSource.Factory {
+            delegate.setLoadErrorHandlingPolicy(policy); return this
+        }
     }
     private fun save(finished: Boolean = false) {
         if (!::player.isInitialized) return

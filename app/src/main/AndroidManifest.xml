@@ -13,6 +13,7 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:label="Sottovoce"
         android:icon="@drawable/ic_launcher"
+        android:largeHeap="true"
         android:roundIcon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="false"
