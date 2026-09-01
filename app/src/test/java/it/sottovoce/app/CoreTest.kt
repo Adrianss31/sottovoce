@@ -173,7 +173,7 @@ class CoreTest {
         assertEquals("08/26",s.months[4].label); assertEquals(60*60_000L,s.months[4].durationMs)
         assertEquals(0L,s.months[3].durationMs)
         assertEquals(0L, s.todayMs)
-        assertEquals(50*60_000L, s.weekMs)
+        assertEquals(20*60_000L, s.weekMs)
         assertEquals(2, s.activeDaysLast7)
         assertEquals(0, s.currentStreak)
         assertEquals(7, s.days.size)
