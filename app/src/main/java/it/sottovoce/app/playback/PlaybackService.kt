@@ -7,14 +7,17 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -50,7 +53,9 @@ fun Book.mediaItems(): List<MediaItem> = chapterTimeline().map { chapter ->
     val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(chapter.startMs).apply {
         if (chapter.endMs > chapter.startMs) setEndPositionMs(chapter.endMs)
     }.build()
-    MediaItem.Builder().setMediaId("$id/${track.id}/${chapter.startMs}").setUri(track.uri).setClippingConfiguration(clipping)
+    MediaItem.Builder().setMediaId("$id/${track.id}/${chapter.startMs}").setUri(track.uri).apply {
+        if (track.name.substringAfterLast('.').lowercase() in setOf("m4b", "m4a", "mp4")) setMimeType(MimeTypes.AUDIO_MP4)
+    }.setClippingConfiguration(clipping)
         .setMediaMetadata(MediaMetadata.Builder().setTitle(chapter.title).setArtist(author)
             .setSubtitle("Capitolo ${chapter.ordinal} di ${chapter.total}").setAlbumTitle(title).setExtras(extras)
             .setArtworkUri(coverPath?.let { Uri.fromFile(File(it)) }).build()).build()
@@ -95,7 +100,7 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val prefs = getSharedPreferences("preferences", MODE_PRIVATE)
-        player = ExoPlayer.Builder(this)
+        player = ExoPlayer.Builder(this, DefaultRenderersFactory(this).setEnableDecoderFallback(true))
             .setSeekBackIncrementMs(10_000L)
             .setSeekForwardIncrementMs(prefs.getInt("skipForward", 30) * 1000L)
             .build().apply {
@@ -117,7 +122,13 @@ class PlaybackService : MediaSessionService() {
                         save()
                     }
                     override fun onPlayerError(error: PlaybackException) {
-                        PlaybackSignals.error.value = "Impossibile leggere questo file. Controlla che sia presente, accessibile e in un formato supportato. Puoi ricollegarlo dalla scheda del libro."
+                        Log.e("SottovocePlayback", "Riproduzione non riuscita: ${error.errorCodeName}", error)
+                        val detail = generateSequence(error.cause) { it.cause }.lastOrNull()?.message
+                            ?.replace(Regex("\\s+"), " ")?.take(180)
+                        PlaybackSignals.error.value = buildString {
+                            append("Impossibile riprodurre questo audio (${error.errorCodeName}).")
+                            if (!detail.isNullOrBlank()) append(" ").append(detail)
+                        }
                     }
                 })
             }
