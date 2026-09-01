@@ -78,15 +78,21 @@ class AppSmokeTest {
         compose.onNodeWithText("Scegli file").assertIsDisplayed()
         compose.onNodeWithText("Scegli cartella").assertIsDisplayed()
     }
-    @Test fun seriesCanBeGroupedAndLibraryCanBecomeCompact() {
+    @Test fun seriesAreGroupedUnderOneCardAndLibraryCanBecomeCompact() {
         val book=seed()
         runBlocking{app.library.update(book.id){it.copy(series="Trilogia di prova",seriesPosition=1)}}
         compose.waitUntil(5000){compose.onAllNodesWithText("Trilogia di prova",substring=true).fetchSemanticsNodes().isNotEmpty()}
+        // In home il libro in serie non è più una card singola: è raggruppato sotto la card della serie.
+        compose.onNodeWithTag("book_${book.id}").assertDoesNotExist()
+        compose.onNodeWithTag("series_card_Trilogia di prova").assertIsDisplayed()
+        // Anche in vista compatta la serie resta raggruppata.
         compose.onNodeWithContentDescription("Vista compatta").performClick()
-        compose.onNodeWithContentDescription("Ordina libri").performClick()
-        compose.onNodeWithText("Serie").performClick()
-        compose.onAllNodesWithText("Trilogia di prova",substring=true).onFirst().assertIsDisplayed()
+        compose.onNodeWithTag("series_card_Trilogia di prova").assertIsDisplayed()
+        // Un tocco apre la serie e mostra i suoi libri.
+        compose.onNodeWithTag("series_card_Trilogia di prova").performClick()
+        compose.onNodeWithTag("series_view").assertIsDisplayed()
         compose.onNodeWithTag("book_${book.id}").assertIsDisplayed()
+        screenshot("03-series")
     }
     @Test fun playerPersistsSeekSpeedAndBookmark() {
         val book=seed()
