@@ -82,10 +82,13 @@ class AppSmokeTest {
         compose.onNodeWithText("Inizia l’ascolto").performClick()
         compose.waitUntil(10_000){vm.now.playing}
         compose.onNodeWithText("Capitolo introduttivo").assertIsDisplayed()
-        assertEquals("Capitolo introduttivo",vm.controller?.mediaMetadata?.title?.toString())
-        assertTrue(requireNotNull(vm.controller).duration in 14_000L..16_000L)
+        compose.runOnIdle {
+            assertEquals("Capitolo introduttivo",vm.controller?.mediaMetadata?.title?.toString())
+            assertTrue(requireNotNull(vm.controller).duration in 14_000L..16_000L)
+        }
         compose.runOnIdle{vm.seek(20_000)}
-        compose.waitUntil(5000){vm.controller?.mediaMetadata?.title?.toString()=="Seconda parte"&&vm.now.position>=19_000}
+        compose.waitUntil(5000){vm.now.position>=19_000}
+        compose.runOnIdle{assertEquals("Seconda parte",vm.controller?.mediaMetadata?.title?.toString())}
         compose.runOnIdle{vm.seek(10_000);vm.speed(1.5f)}
         compose.waitUntil(10_000){app.library.books.value.first().positionMs>=9000}
         compose.onNodeWithTag("play_pause").performClick()
@@ -117,7 +120,10 @@ class AppSmokeTest {
         runBlocking{app.library.update(book.id){multi}}
         compose.runOnIdle{vm.playBook(multi)}
         compose.waitUntil(10_000){vm.now.playing}
-        compose.runOnIdle{vm.seek(28_000);vm.timer(-1)}
+        compose.runOnIdle{vm.seek(28_000)}
+        compose.waitUntil(5_000){vm.now.position>=27_500}
+        compose.runOnIdle{vm.timer(-1)}
+        compose.waitUntil(5_000){PlaybackSignals.timer.value=="Fine capitolo"}
         compose.waitUntil(10_000){!vm.now.playing && vm.now.position>=29_000}
         assertEquals(0,vm.now.trackIndex)
         assertTrue(it.sottovoce.app.playback.PlaybackSignals.timer.value.isEmpty())
