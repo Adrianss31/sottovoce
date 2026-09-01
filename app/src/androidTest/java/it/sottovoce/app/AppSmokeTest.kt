@@ -100,9 +100,12 @@ class AppSmokeTest {
         assertEquals(1.5f,app.library.books.value.first().speed,0f)
         assertTrue(app.library.books.value.first().positionMs>=9000)
         val timerCommand=SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND,Bundle.EMPTY)
-        vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY).get(5,TimeUnit.SECONDS)
+        var timerFuture: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.SessionResult>?=null
+        compose.runOnIdle{timerFuture=vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY)}
+        timerFuture!!.get(5,TimeUnit.SECONDS)
         compose.waitUntil(5000){PlaybackSignals.timer.value=="30 minuti"}
-        vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY).get(5,TimeUnit.SECONDS)
+        compose.runOnIdle{timerFuture=vm.controller!!.sendCustomCommand(timerCommand,Bundle.EMPTY)}
+        timerFuture!!.get(5,TimeUnit.SECONDS)
         compose.waitUntil(5000){PlaybackSignals.timer.value.isEmpty()}
         runBlocking{app.library.load()}
         assertEquals("Un passaggio da ricordare",app.library.bookmarks.value.single().note)

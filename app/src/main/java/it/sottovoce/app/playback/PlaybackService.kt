@@ -84,7 +84,10 @@ class PlaybackService : MediaSessionService() {
     private val tick = object : Runnable {
         override fun run() {
             if (deadline > 0 && SystemClock.elapsedRealtime() >= deadline) stopTimer(pause = true)
-            if (chapterEnd >= 0 && (player.currentMediaItemIndex != chapterTrack || player.currentPosition >= chapterEnd)) stopTimer(pause = true)
+            if (chapterTrack >= 0 &&
+                (player.currentMediaItemIndex != chapterTrack || chapterEnd > 0 && player.currentPosition >= chapterEnd - 50)) {
+                finishChapterTimer()
+            }
             if (++ticks % 12 == 0 && player.isPlaying) save()
             handler.postDelayed(this, 250)
         }
@@ -106,7 +109,7 @@ class PlaybackService : MediaSessionService() {
                         save()
                     }
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                        if (chapterTrack >= 0 && player.currentMediaItemIndex != chapterTrack) stopTimer(pause = true)
+                        if (chapterTrack >= 0 && player.currentMediaItemIndex != chapterTrack) finishChapterTimer()
                         save()
                     }
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -202,12 +205,26 @@ class PlaybackService : MediaSessionService() {
         stopTimer(false)
         if (minutes == -1) {
             chapterTrack = player.currentMediaItemIndex
-            chapterEnd = -1L
+            chapterEnd = player.duration.takeIf { it > 0 } ?: C.TIME_UNSET
             player.pauseAtEndOfMediaItems = true
             PlaybackSignals.timer.value = "Fine capitolo"
         } else if (minutes in 1..180) {
             deadline = SystemClock.elapsedRealtime() + minutes * 60_000L
             PlaybackSignals.timer.value = "$minutes minuti"
+        }
+        updateMediaButtons()
+    }
+    private fun finishChapterTimer() {
+        val itemIndex = chapterTrack
+        val endPosition = chapterEnd
+        deadline = 0; chapterEnd = -1; chapterTrack = -1
+        PlaybackSignals.timer.value = ""
+        if (::player.isInitialized) {
+            player.pauseAtEndOfMediaItems = false
+            player.pause()
+            if (itemIndex >= 0 && endPosition > 0) {
+                player.seekTo(itemIndex, (endPosition - 1).coerceAtLeast(0))
+            }
         }
         updateMediaButtons()
     }
