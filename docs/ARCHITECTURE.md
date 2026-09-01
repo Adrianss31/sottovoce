@@ -2,7 +2,9 @@
 
 App nativa Kotlin, Jetpack Compose Material 3. Un’unica Activity conserva il ViewModel durante i cambiamenti di configurazione. Il servizio Media3 gestisce audio e sessione indipendentemente dallo schermo aperto.
 
-L’interfaccia non separa la scheda del libro dal lettore: la stessa destinazione mostra metadati, comandi di ascolto, progresso, capitoli e segnalibri. L’avvio della riproduzione aggiorna i controlli sul posto e non cambia schermata. La navigazione distingue apertura del libro, avanzamento verso altre destinazioni e ritorno, con animazioni coerenti con la direzione.
+L’interfaccia non separa la scheda del libro dal lettore: la stessa destinazione mostra metadati, comandi di ascolto, progresso, capitoli e segnalibri. L’avvio della riproduzione aggiorna i controlli sul posto e non cambia schermata.
+
+La navigazione conserva il rapporto gerarchico tra libreria, serie, libro e destinazioni secondarie. Le transizioni in avanti e indietro usano direzioni opposte, mentre l’apertura di un libro mantiene continuità con la copertina e il contenitore di partenza. Il sistema di movimento separa la navigazione dai cambi di stato locali: play/pausa, salti, filtri, capitoli, segnalibri, timer, velocità, progressi e inserimenti nella libreria hanno feedback brevi e specifici, senza riavviare l’animazione dell’intera schermata.
 
 ## Dati locali
 

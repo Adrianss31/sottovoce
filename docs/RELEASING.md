@@ -13,14 +13,14 @@ python3 scripts/sign_release.py \
   --keystore /percorso/privato/sottovoce-release.p12 \
   --password-file /percorso/privato/keystore-password.txt \
   --update-key /percorso/privato/update-private.pem \
-  --version 0.1.5 --code 6 \
+  --version 0.4.0 --code 13 \
   --notes-file /percorso/note-release.md \
-  --output /percorso/release-0.1.5
+  --output /percorso/release-0.4.0
 ```
 
 Lo script verifica con aapt identità, versione e Android minimo dell’APK, controlla la corrispondenza della chiave pubblica, firma e verifica l’APK, calcola il checksum, firma il descrittore e verifica anche questa firma. I numeri passati allo script **devono corrispondere all’APK compilato**; lo script li verifica con `aapt dump badging` (aapt deve trovarsi nella stessa cartella di apksigner). Lo script non modifica il codice dell’APK.
 
-4. Crea una release in bozza con un tag corrispondente alla versione, per esempio `v0.1.5`, sul commit effettivamente verificato. Allega l’APK firmato, `update.json` e `SHA256SUMS`.
+4. Crea una release in bozza con un tag corrispondente alla versione, per esempio `v0.4.0`, sul commit effettivamente verificato. Allega l’APK firmato, `update.json` e `SHA256SUMS`.
 5. Dopo la verifica, pubblicala come release normale, non prerelease: il controllo integrato usa `releases/latest/download/update.json`, che non seleziona prerelease.
 6. Verifica da una connessione pubblica manifest e APK, quindi prova sul telefono l’aggiornamento dalla versione precedente. Con la prima release non esiste ancora una versione pubblica precedente da cui eseguire questa prova.
 
