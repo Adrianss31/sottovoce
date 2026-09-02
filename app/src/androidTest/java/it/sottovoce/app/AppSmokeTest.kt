@@ -142,8 +142,12 @@ class AppSmokeTest {
         val large=original.copy(tracks=listOf(original.tracks.single().copy(size=3_000_000_000L)))
         runBlocking { app.library.update(original.id) { large } }
         compose.runOnIdle { vm.playBook(large,0,1_000) }
-        compose.waitUntil(10_000) { vm.now.playing && vm.controller?.mediaItemCount == 1 }
-        val mediaId=vm.controller?.currentMediaItem?.mediaId
+        compose.waitUntil(10_000) { vm.now.playing }
+        var mediaId:String?=null
+        compose.runOnIdle {
+            assertEquals(1,vm.controller?.mediaItemCount)
+            mediaId=vm.controller?.currentMediaItem?.mediaId
+        }
         compose.runOnIdle { vm.playBook(large,0,16_000) }
         compose.waitUntil(5_000) { vm.now.playing && vm.now.position >= 15_000 }
         compose.runOnIdle {
