@@ -188,7 +188,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
     fun togglePlay() {
         val current = controller ?: return
-        val resume = !current.isPlaying
+        val resume = !current.playWhenReady
         if (resume) {
             if (current.playbackState == Player.STATE_IDLE) current.prepare()
             current.play()
