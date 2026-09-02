@@ -174,13 +174,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         if (book.needsRelink || book.tracks.any { !library.isSafeAudioUri(it.uri) }) { selectedId = book.id; screen = "detail"; message = "Ricollega i file prima di ascoltare."; return }
         val c = controller ?: run { message = "Il lettore si sta avviando. Riprova fra un istante."; return }
         PlaybackSignals.error.value = null
-        if (now.bookId != book.id || index != null || c.playbackState == Player.STATE_ENDED) {
-            val track = (index ?: book.trackIndex).coerceIn(book.tracks.indices)
-            val start = book.chapterPlaybackStart(track, (position ?: book.positionMs).coerceAtLeast(0))
+        val track = (index ?: book.trackIndex).coerceIn(book.tracks.indices)
+        val start = book.chapterPlaybackStart(track, (position ?: book.positionMs).coerceAtLeast(0))
+        val samePlaylist = now.bookId == book.id && c.mediaItemCount == book.playbackItemCount()
+        if (!samePlaylist) {
             c.setMediaItems(book.mediaItems(), start.itemIndex, start.positionMs)
             c.setPlaybackSpeed(book.speed)
-            c.prepare()
-        } else if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        } else if (index != null || position != null || c.playbackState == Player.STATE_ENDED) {
+            c.seekTo(start.itemIndex, start.positionMs)
+        }
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
         c.play(); snapshot()
     }
     fun togglePlay() {

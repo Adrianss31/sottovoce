@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -112,6 +113,7 @@ private val SottovoceTypography = Typography(
     var dialog by remember { mutableStateOf<String?>(null) }
     var reorderId by remember { mutableStateOf<String?>(null) }
     val backStack = remember { mutableStateListOf<NavigationFrame>() }
+    val destinationStateHolder = rememberSaveableStateHolder()
     var navigationDirection by remember { mutableStateOf(NavigationDirection.Forward) }
     var sharedBookOrigin by remember { mutableStateOf<String?>(null) }
     var sharedSeriesOrigin by remember { mutableStateOf<String?>(null) }
@@ -259,16 +261,20 @@ private val SottovoceTypography = Typography(
                                 scaleY = 1f - .018f * predictiveBackProgress
                             }
                         }) { when (screen) {
-                            "library" -> LibraryScreen(books, last, vm.now.bookId, vm.now.playing, vm, vm.stats,
-                                onImport = { vm.relinkId = null; dialog = "import" },
-                                onBook = { target, origin -> openBook(target, origin) }, onPlay = { play(it) },
-                                onSeries = { key, origin -> sharedSeriesOrigin = origin; navigateTo("series", selectedSeries = key) },
-                                onStats = { origin -> sharedStatsOrigin = origin; navigateTo("stats"); vm.openStats() })
+                            "library" -> destinationStateHolder.SaveableStateProvider("library") {
+                                LibraryScreen(books, last, vm.now.bookId, vm.now.playing, vm, vm.stats,
+                                    onImport = { vm.relinkId = null; dialog = "import" },
+                                    onBook = { target, origin -> openBook(target, origin) }, onPlay = { play(it) },
+                                    onSeries = { key, origin -> sharedSeriesOrigin = origin; navigateTo("series", selectedSeries = key) },
+                                    onStats = { origin -> sharedStatsOrigin = origin; navigateTo("stats"); vm.openStats() })
+                            }
                             "series" -> vm.selectedSeries?.let { key ->
-                                val seriesBooks = books.filter { seriesKey(it.series) == seriesKey(key) }
-                                val name = seriesBooks.firstOrNull()?.series?.trim()?.replace(Regex("\\s+"), " ") ?: key
-                                SeriesScreen(name, seriesBooks, vm, vm.now.bookId, vm.now.playing, sharedSeriesOrigin,
-                                    onBook = { target, origin -> openBook(target, origin) })
+                                destinationStateHolder.SaveableStateProvider("series:$key") {
+                                    val seriesBooks = books.filter { seriesKey(it.series) == seriesKey(key) }
+                                    val name = seriesBooks.firstOrNull()?.series?.trim()?.replace(Regex("\\s+"), " ") ?: key
+                                    SeriesScreen(name, seriesBooks, vm, vm.now.bookId, vm.now.playing, sharedSeriesOrigin,
+                                        onBook = { target, origin -> openBook(target, origin) })
+                                }
                             }
                             "stats" -> StatsScreen(vm.stats, sharedStatsOrigin)
                             "detail" -> if (book != null) DetailScreen(book, bookmarks.filter { it.bookId == book.id }, vm.now.bookId == book.id, vm, timer,

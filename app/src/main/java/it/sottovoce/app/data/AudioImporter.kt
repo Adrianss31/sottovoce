@@ -64,6 +64,9 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
             context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
                 if (c.moveToFirst()) { name = c.getString(0) ?: name; size = if (c.isNull(1)) 0 else c.getLong(1).coerceAtLeast(0) }
             }
+            if (size == 0L) size = runCatching {
+                context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length.coerceAtLeast(0) } ?: 0L
+            }.getOrDefault(0L)
             require(supported(name)) { "Formato non supportato: $name" }
             var duration = 0L
             val retriever = MediaMetadataRetriever()

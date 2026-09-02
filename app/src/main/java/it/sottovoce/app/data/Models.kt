@@ -58,6 +58,44 @@ data class BookChapter(
 
 enum class ChapterStatus { COMPLETED, CURRENT, UPCOMING }
 data class ChapterPlaybackStart(val itemIndex: Int, val positionMs: Long)
+data class PlaybackSegment(
+    val trackIndex: Int,
+    val title: String,
+    val startMs: Long,
+    val endMs: Long,
+    val chapterOrdinal: Int,
+    val chapterTotal: Int,
+    val clipped: Boolean,
+)
+
+private const val SINGLE_SOURCE_PLAYBACK_THRESHOLD = 1024L * 1024L * 1024L
+
+/**
+ * A chaptered file normally becomes one clipped playlist item per chapter.
+ * Reopening the same very large container for every clip duplicates its MP4
+ * sample tables, so large files stay as one physical playback source instead.
+ */
+fun AudioTrack.usesSingleSourcePlayback(): Boolean =
+    chapters.size > 1 && size >= SINGLE_SOURCE_PLAYBACK_THRESHOLD
+
+fun AudioTrack.playbackItemCount(): Int =
+    if (usesSingleSourcePlayback()) 1 else chapters.size.coerceAtLeast(1)
+
+fun Book.playbackItemCount(): Int = tracks.sumOf { it.playbackItemCount() }
+
+fun Book.playbackSegments(): List<PlaybackSegment> {
+    val timeline = chapterTimeline()
+    return tracks.flatMapIndexed { trackIndex, track ->
+        val chapters = timeline.filter { it.trackIndex == trackIndex }
+        if (track.usesSingleSourcePlayback()) {
+            listOf(PlaybackSegment(trackIndex, title, 0, track.durationMs,
+                chapters.firstOrNull()?.ordinal ?: 1, timeline.size.coerceAtLeast(1), clipped = false))
+        } else chapters.map { chapter ->
+            PlaybackSegment(trackIndex, chapter.title, chapter.startMs, chapter.endMs,
+                chapter.ordinal, chapter.total, clipped = true)
+        }
+    }
+}
 
 fun Book.chapterTimeline(): List<BookChapter> {
     val partial = tracks.flatMapIndexed { trackIndex, track ->
@@ -88,8 +126,16 @@ fun Book.chapterStatus(chapter: BookChapter): ChapterStatus {
 }
 
 fun Book.chapterPlaybackStart(index: Int = trackIndex, position: Long = positionMs): ChapterPlaybackStart {
-    val chapter = currentChapter(index, position) ?: return ChapterPlaybackStart(0, position.coerceAtLeast(0))
-    return ChapterPlaybackStart(chapter.ordinal - 1, (position - chapter.startMs).coerceIn(0, chapter.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE))
+    if (tracks.isEmpty()) return ChapterPlaybackStart(0, position.coerceAtLeast(0))
+    val safeTrackIndex = index.coerceIn(tracks.indices)
+    val track = tracks[safeTrackIndex]
+    val absolutePosition = position.coerceIn(0, track.durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE)
+    val segments = playbackSegments()
+    val itemIndex = segments.indexOfLast { it.trackIndex == safeTrackIndex && it.startMs <= absolutePosition }
+        .takeIf { it >= 0 } ?: segments.indexOfFirst { it.trackIndex == safeTrackIndex }.coerceAtLeast(0)
+    val segment = segments.getOrNull(itemIndex) ?: return ChapterPlaybackStart(0, absolutePosition)
+    return ChapterPlaybackStart(itemIndex,
+        (absolutePosition - segment.startMs).coerceIn(0, (segment.endMs - segment.startMs).takeIf { it > 0 } ?: Long.MAX_VALUE))
 }
 @Serializable data class Bookmark(
     val id: String = UUID.randomUUID().toString(), val bookId: String,

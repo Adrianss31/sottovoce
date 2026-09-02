@@ -44,7 +44,8 @@ import it.sottovoce.app.R
 import it.sottovoce.app.SottovoceApp
 import it.sottovoce.app.data.Book
 import it.sottovoce.app.data.chapterPlaybackStart
-import it.sottovoce.app.data.chapterTimeline
+import it.sottovoce.app.data.currentChapter
+import it.sottovoce.app.data.playbackSegments
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import java.io.File
@@ -59,21 +60,23 @@ object PlaybackSignals {
     const val TOGGLE_TIMER_COMMAND = "it.sottovoce.TOGGLE_TIMER_30"
 }
 
-fun Book.mediaItems(): List<MediaItem> = chapterTimeline().map { chapter ->
-    val track = tracks[chapter.trackIndex]
+fun Book.mediaItems(): List<MediaItem> = playbackSegments().map { segment ->
+    val track = tracks[segment.trackIndex]
     val extras = Bundle().apply {
-        putString("bookId", id); putInt("trackIndex", chapter.trackIndex)
-        putLong("chapterStartMs", chapter.startMs); putInt("chapterOrdinal", chapter.ordinal); putInt("chapterTotal", chapter.total)
+        putString("bookId", id); putInt("trackIndex", segment.trackIndex)
+        putLong("chapterStartMs", segment.startMs); putInt("chapterOrdinal", segment.chapterOrdinal)
+        putInt("chapterTotal", segment.chapterTotal); putBoolean("singleSource", !segment.clipped)
     }
-    val clipping = MediaItem.ClippingConfiguration.Builder().setStartPositionMs(chapter.startMs).apply {
-        if (chapter.endMs > chapter.startMs) setEndPositionMs(chapter.endMs)
-    }.build()
-    MediaItem.Builder().setMediaId("$id/${track.id}/${chapter.startMs}").setUri(track.uri).apply {
+    MediaItem.Builder().setMediaId("$id/${track.id}/${if (segment.clipped) segment.startMs else "full"}").setUri(track.uri).apply {
         if (track.name.substringAfterLast('.').lowercase() in setOf("m4b", "m4a", "mp4")) setMimeType(MimeTypes.AUDIO_MP4)
-    }.setClippingConfiguration(clipping)
-        .setMediaMetadata(MediaMetadata.Builder().setTitle(chapter.title).setArtist(author)
-            .setSubtitle("Capitolo ${chapter.ordinal} di ${chapter.total}").setAlbumTitle(title).setExtras(extras)
-            .setArtworkUri(coverPath?.let { Uri.fromFile(File(it)) }).build()).build()
+        if (segment.clipped) setClippingConfiguration(MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(segment.startMs).apply {
+                if (segment.endMs > segment.startMs) setEndPositionMs(segment.endMs)
+            }.build())
+    }.setMediaMetadata(MediaMetadata.Builder().setTitle(segment.title).setArtist(author)
+        .setSubtitle(if (segment.clipped) "Capitolo ${segment.chapterOrdinal} di ${segment.chapterTotal}" else "Audiolibro completo")
+        .setAlbumTitle(title).setExtras(extras)
+        .setArtworkUri(coverPath?.let { Uri.fromFile(File(it)) }).build()).build()
 }
 
 @UnstableApi
@@ -161,6 +164,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
                     }
                     override fun onPlaybackStateChanged(playbackState: Int) { if (playbackState == Player.STATE_ENDED) save(finished = true) }
                     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                        refreshSingleSourceChapterTimer()
                         save()
                     }
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -322,14 +326,33 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
         automaticTimer = automatic
         if (minutes == -1) {
             chapterTrack = player.currentMediaItemIndex
-            chapterEnd = player.duration.takeIf { it > 0 } ?: C.TIME_UNSET
-            player.pauseAtEndOfMediaItems = true
+            val extras = player.currentMediaItem?.mediaMetadata?.extras
+            val singleSource = extras?.getBoolean("singleSource", false) == true
+            chapterEnd = if (singleSource) {
+                val book = app.library.books.value.find { it.id == extras?.getString("bookId") }
+                val trackIndex = extras?.getInt("trackIndex", 0) ?: 0
+                book?.currentChapter(trackIndex, player.currentPosition)?.endMs
+                    ?.takeIf { it > player.currentPosition } ?: player.duration
+            } else player.duration
+            if (chapterEnd <= 0) chapterEnd = C.TIME_UNSET
+            player.pauseAtEndOfMediaItems = !singleSource
         } else if (minutes in 1..180) {
             deadline = SystemClock.elapsedRealtime() + minutes * 60_000L
         }
         if (timerActive()) registerShakeIfEnabled()
         updateTimerPresentation()
         updateMediaButtons()
+    }
+    private fun refreshSingleSourceChapterTimer() {
+        if (chapterTrack < 0 || player.currentMediaItemIndex != chapterTrack) return
+        val extras = player.currentMediaItem?.mediaMetadata?.extras ?: return
+        if (!extras.getBoolean("singleSource", false)) return
+        val book = app.library.books.value.find { it.id == extras.getString("bookId") } ?: return
+        val trackIndex = extras.getInt("trackIndex", 0)
+        chapterEnd = book.currentChapter(trackIndex, player.currentPosition)?.endMs
+            ?.takeIf { it > player.currentPosition } ?: player.duration
+        if (chapterEnd <= 0) chapterEnd = C.TIME_UNSET
+        updateTimerPresentation()
     }
     private fun extendTimer(minutes: Int) {
         if (deadline > 0) deadline += minutes * 60_000L
@@ -345,7 +368,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
     private fun updateTimerPresentation() {
         val remaining = when {
             deadline > 0 -> (deadline - SystemClock.elapsedRealtime()).coerceAtLeast(0)
-            chapterTrack >= 0 && player.duration > 0 -> (player.duration - player.currentPosition).coerceAtLeast(0)
+            chapterTrack >= 0 && chapterEnd > 0 -> (chapterEnd - player.currentPosition).coerceAtLeast(0)
             else -> -1L
         }
         PlaybackSignals.timer.value = when {

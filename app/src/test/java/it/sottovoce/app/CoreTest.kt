@@ -38,6 +38,22 @@ class CoreTest {
         assertEquals(ChapterStatus.CURRENT,book.chapterStatus(chapters[1]))
         assertEquals(ChapterPlaybackStart(1,15_000),book.chapterPlaybackStart())
     }
+    @Test fun largeChapteredFilesUseOneSourceAndAbsoluteChapterSeeks() {
+        val chapters=listOf(Chapter("Uno",0),Chapter("Due",30_000),Chapter("Tre",60_000))
+        val large=AudioTrack(uri="file:///large.m4b",name="large.m4b",durationMs=90_000,
+            size=3_000_000_000L,chapters=chapters)
+        val small=AudioTrack(uri="file:///small.m4b",name="small.m4b",durationMs=90_000,
+            size=30_000_000L,chapters=chapters)
+        val largeBook=Book(title="Grande",tracks=listOf(large),positionMs=45_000)
+        assertTrue(large.usesSingleSourcePlayback())
+        assertEquals(1,largeBook.playbackSegments().size)
+        assertFalse(largeBook.playbackSegments().single().clipped)
+        assertEquals(ChapterPlaybackStart(0,45_000),largeBook.chapterPlaybackStart())
+
+        val mixed=Book(title="Misto",tracks=listOf(large,small))
+        assertEquals(4,mixed.playbackItemCount())
+        assertEquals(ChapterPlaybackStart(2,15_000),mixed.chapterPlaybackStart(index=1,position=45_000))
+    }
     @Test fun smartRewindGrowsWithThePauseAndRemainsBounded() {
         assertEquals(0L, smartRewindForPause(29_999))
         assertEquals(5_000L, smartRewindForPause(30_000))
