@@ -97,6 +97,8 @@ class AppSmokeTest {
     @Test fun playerPersistsSeekSpeedAndBookmark() {
         val book=seed()
         screenshot("02-library")
+        compose.onNodeWithTag("book_${book.id}").performScrollTo()
+        screenshot("02-library-books")
         compose.onNodeWithTag("book_${book.id}").performClick()
         compose.onNodeWithTag("book_detail").assertIsDisplayed()
         compose.onNodeWithText("Inizia l’ascolto").performScrollTo().performClick()
@@ -116,6 +118,8 @@ class AppSmokeTest {
         compose.onNodeWithTag("play_pause").performClick()
         compose.waitUntil(5000){!vm.now.playing}
         screenshot("03-player")
+        compose.onAllNodesWithText("Seconda parte").onLast().performScrollTo()
+        screenshot("04-chapters")
         compose.onNodeWithText("Segnalibro",substring=false).performScrollTo().performClick()
         compose.onNodeWithText("Nota facoltativa").performTextInput("Un passaggio da ricordare")
         compose.onNodeWithText("Salva",substring=false).performClick()
