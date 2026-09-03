@@ -207,8 +207,8 @@ private val SottovoceTypography = Typography(
                     Icon(Icons.Default.Headphones, null, tint = MaterialTheme.colorScheme.primary)
                     Text("Sottovoce", style = MaterialTheme.typography.titleLarge)
                 } }, navigationIcon = {
-                    AnimatedVisibility(vm.screen != "library", enter = fadeIn(tween(160)) + slideInHorizontally { -it / 3 },
-                        exit = fadeOut(tween(120)) + slideOutHorizontally { -it / 3 }) {
+                    AnimatedVisibility(vm.screen != "library", enter = fadeIn(tween(160)) + slideInHorizontally { -it / SottovoceMotionTokens.BackIconOffsetFraction },
+                        exit = fadeOut(tween(120)) + slideOutHorizontally { it / SottovoceMotionTokens.BackIconOffsetFraction }) {
                         IconButton(onClick = ::goBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Torna indietro") }
                     }
                 }, actions = {
@@ -243,14 +243,19 @@ private val SottovoceTypography = Typography(
                     transitionSpec = {
                         val sharedBookTransition = setOf(initialState, targetState).containsAll(setOf("detail")) &&
                             (initialState in setOf("library", "series") || targetState in setOf("library", "series"))
+                        // Forward motion always comes from the leading edge
+                        // (+offset) and back motion mirrors it (-offset) so
+                        // that returning through the back affordance feels
+                        // like the exact reverse of the path that led here.
+                        val fraction = SottovoceMotionTokens.HorizontalOffsetFraction
                         when {
                             sharedBookTransition -> fadeIn(tween(motion.durationMillis(240))) togetherWith fadeOut(tween(motion.durationMillis(160)))
                             navigationDirection == NavigationDirection.Back ->
-                                (fadeIn(tween(motion.durationMillis(220))) + slideInHorizontally(tween(motion.durationMillis(300), easing = SottovoceMotionTokens.StandardEasing)) { -it / 10 }) togetherWith
-                                    (fadeOut(tween(motion.durationMillis(150))) + slideOutHorizontally(tween(motion.durationMillis(260), easing = SottovoceMotionTokens.AccelerateEasing)) { it / 10 })
+                                (fadeIn(tween(motion.durationMillis(220))) + slideInHorizontally(tween(motion.durationMillis(300), easing = SottovoceMotionTokens.StandardEasing)) { -it / fraction }) togetherWith
+                                    (fadeOut(tween(motion.durationMillis(150))) + slideOutHorizontally(tween(motion.durationMillis(260), easing = SottovoceMotionTokens.AccelerateEasing)) { it / fraction })
                             else ->
-                                (fadeIn(tween(motion.durationMillis(220))) + slideInHorizontally(tween(motion.durationMillis(300), easing = SottovoceMotionTokens.StandardEasing)) { it / 10 }) togetherWith
-                                    (fadeOut(tween(motion.durationMillis(150))) + slideOutHorizontally(tween(motion.durationMillis(260), easing = SottovoceMotionTokens.AccelerateEasing)) { -it / 10 })
+                                (fadeIn(tween(motion.durationMillis(220))) + slideInHorizontally(tween(motion.durationMillis(300), easing = SottovoceMotionTokens.StandardEasing)) { it / fraction }) togetherWith
+                                    (fadeOut(tween(motion.durationMillis(150))) + slideOutHorizontally(tween(motion.durationMillis(260), easing = SottovoceMotionTokens.AccelerateEasing)) { -it / fraction })
                         }.using(SizeTransform(clip = false))
                     }, label = "navigazione contestuale") { screen ->
                     CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@AnimatedContent) {
@@ -285,8 +290,15 @@ private val SottovoceTypography = Typography(
                                 onRemove = { dialog = "remove" }, onRemoveCopies = { dialog = "copies" },
                                 onDeleteMark = { id -> vm.task("Rimozione…") { vm.library.removeBookmark(id) } })
                             "import" -> AnimatedContent(reorderId, transitionSpec = {
-                                if (targetState != null) (fadeIn(tween(180)) + slideInHorizontally { it / 10 }) togetherWith (fadeOut(tween(140)) + slideOutHorizontally { -it / 10 })
-                                else (fadeIn(tween(180)) + slideInHorizontally { -it / 10 }) togetherWith (fadeOut(tween(140)) + slideOutHorizontally { it / 10 })
+                                val importFraction = SottovoceMotionTokens.HorizontalOffsetFraction
+                                // Opening the reorder list is a forward step:
+                                // the detail slides in from the trailing edge
+                                // and the preview leaves through the leading
+                                // edge. Returning to the preview mirrors it
+                                // so the back action reads as the inverse of
+                                // the gesture that opened the reorder.
+                                if (targetState != null) (fadeIn(tween(180)) + slideInHorizontally { it / importFraction }) togetherWith (fadeOut(tween(140)) + slideOutHorizontally { -it / importFraction })
+                                else (fadeIn(tween(180)) + slideInHorizontally { -it / importFraction }) togetherWith (fadeOut(tween(140)) + slideOutHorizontally { it / importFraction })
                             }, label = "anteprima e riordino") { selected ->
                                 if (selected != null) ReorderScreen(vm, selected) else ImportPreview(vm, onReorder = { reorderId = it })
                             }

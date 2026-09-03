@@ -58,6 +58,16 @@ internal object SottovoceMotionTokens {
     const val DurationLong = 360
     const val DurationProgress = 500
 
+    /**
+     * Horizontal offset fraction used by navigation transitions and by the
+     * back affordance in the top bar. Forward motion always comes from the
+     * leading edge (+it), back motion mirrors it (-it); the back icon in the
+     * top bar uses the same fraction so that arriving and leaving feel like
+     * a single coherent gesture rather than a generic fade.
+     */
+    const val HorizontalOffsetFraction = 10
+    const val BackIconOffsetFraction = 3
+
     const val PressedScale = 0.985f
     const val ProminentPressedScale = 0.975f
     const val IconIncomingScale = 0.82f

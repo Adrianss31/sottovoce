@@ -4,7 +4,7 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato del codice:** versione 0.4.1. Scarica l’ultima versione pubblicata dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato del codice:** versione 0.4.2. Scarica l’ultima versione pubblicata dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
@@ -25,6 +25,12 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 - Include un widget con capitolo e avanzamento e un riquadro dei comandi rapidi Android per play/pausa.
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
+
+## Novità della 0.4.2
+
+- Rende l’animazione di ritorno speculare al percorso di andata: la pagina in entrata scivola dal bordo opposto e quella in uscita torna nello stesso verso da cui era arrivata, così il gesto di back legge come l’esatto inverso dell’apertura.
+- Allinea la comparsa e la scomparsa dell’icona “indietro” nella barra superiore alla direzione del movimento: appare scivolando e scompare tornando indietro, invece di restare ferma durante il gesto.
+- Allinea anche la transizione tra l’anteprima di importazione e la schermata di riordino delle tracce, in modo che apri e chiudi il riordino come un unico movimento coerente.
 
 ## Novità della 0.4.1
 
