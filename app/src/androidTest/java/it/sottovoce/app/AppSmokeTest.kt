@@ -94,6 +94,20 @@ class AppSmokeTest {
         compose.onNodeWithTag("book_${book.id}").assertIsDisplayed()
         screenshot("03-series")
     }
+    @Test fun backFromScrolledBookReturnsToItsLibraryPosition() {
+        val target = Book(title="Libro in fondo", tracks=emptyList(), createdAt=1)
+        val newer = (1..14).map { index ->
+            Book(title="Libro recente ${index.toString().padStart(2, '0')}", tracks=emptyList(), createdAt=100L + index)
+        }
+        runBlocking { app.library.add(newer + target) }
+        compose.waitUntil(10_000) { app.library.books.value.size == newer.size + 1 }
+        compose.onNodeWithTag("library").performScrollToNode(hasTestTag("book_${target.id}"))
+        compose.onNodeWithTag("book_${target.id}").performClick()
+        compose.onNodeWithText("Gestione del libro").performScrollTo()
+        compose.onNodeWithContentDescription("Torna indietro").performClick()
+        compose.onNodeWithTag("book_${target.id}").assertIsDisplayed()
+        compose.onNodeWithTag("book_${newer.last().id}").assertDoesNotExist()
+    }
     @Test fun playerPersistsSeekSpeedAndBookmark() {
         val book=seed()
         screenshot("02-library")

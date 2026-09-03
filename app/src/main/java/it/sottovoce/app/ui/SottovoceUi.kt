@@ -766,10 +766,11 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
     val totalDuration = entries.sumOf { it.durationMs.coerceAtLeast(0) }
     val played = entries.sumOf { if (it.completed) it.durationMs.coerceAtLeast(0) else it.playedMs.coerceIn(0, it.durationMs.coerceAtLeast(0)) }
     val progress = if (totalDuration > 0) (played.toFloat() / totalDuration).coerceIn(0f, 1f) else 0f
-    LazyVerticalGrid(columns = GridCells.Adaptive(160.dp), modifier = Modifier.fillMaxSize().testTag("series_view"),
+    LazyVerticalGrid(columns = GridCells.Adaptive(160.dp),
+        modifier = Modifier.fillMaxSize().sottovoceSharedBounds(sharedKey).testTag("series_view"),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item(span = { GridItemSpan(maxLineSpan) }) { Surface(Modifier.fillMaxWidth().sottovoceSharedBounds(sharedKey),
+        item(span = { GridItemSpan(maxLineSpan) }) { Surface(Modifier.fillMaxWidth(),
             shape = SottovoceDesign.Soft, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f)) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -829,14 +830,15 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
     }
 }
 @Composable private fun StatsScreen(stats: ListeningStats?, sharedKey: String?) {
-    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+    LazyColumn(Modifier.fillMaxSize().sottovoceSharedBounds(sharedKey),
+        contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         item { Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text("Il tuo ascolto", style = MaterialTheme.typography.headlineLarge)
             Text("Tutto resta sul dispositivo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } }
         val s = stats
         if (s == null) item {}
-        else if (s.totalMs == 0L && s.completedBooks == 0) item { Card(Modifier.sottovoceSharedBounds(sharedKey), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+        else if (s.totalMs == 0L && s.completedBooks == 0) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
             Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Default.Insights, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
                 Text("Inizia ad ascoltare", style = MaterialTheme.typography.titleMedium)
@@ -844,7 +846,7 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         } } else {
-            item { Card(Modifier.sottovoceSharedBounds(sharedKey), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Questa settimana", style = MaterialTheme.typography.titleMedium)
                     Text(humanDuration(s.weekMs), style = MaterialTheme.typography.displaySmall)
@@ -979,8 +981,9 @@ private fun shortDuration(ms: Long): String {
     var section by rememberSaveable(book.id) { mutableStateOf("chapters") }
     val sliderScale by animateFloatAsState(if (dragging != null) 1.035f else 1f,
         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium), label = "presa cursore")
-    LazyColumn(Modifier.testTag("book_detail"), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item { Surface(Modifier.sottovoceSharedBounds(sharedCoverKey), shape = SottovoceDesign.Card, color = MaterialTheme.colorScheme.secondaryContainer, shadowElevation = 1.dp) {
+    LazyColumn(Modifier.fillMaxSize().sottovoceSharedBounds(sharedCoverKey).testTag("book_detail"),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { Surface(shape = SottovoceDesign.Card, color = MaterialTheme.colorScheme.secondaryContainer, shadowElevation = 1.dp) {
             Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Cover(book, Modifier.width(122.dp))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -1236,8 +1239,9 @@ private fun Long?.orZero(): Long = this ?: 0L
 
 @UnstableApi
 @Composable private fun ImportPreview(vm:LibraryViewModel, sharedKey: String?, onReorder:(String)->Unit) {
-    LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        item { Column(Modifier.sottovoceSharedBounds(sharedKey)) { Text(if(vm.relinkId!=null)"Ricollega la registrazione" else "Controlla l’importazione",style=MaterialTheme.typography.headlineMedium) } }
+    LazyColumn(Modifier.fillMaxSize().sottovoceSharedBounds(sharedKey),
+        contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
+        item { Column { Text(if(vm.relinkId!=null)"Ricollega la registrazione" else "Controlla l’importazione",style=MaterialTheme.typography.headlineMedium) } }
         if(vm.relinkId!=null) item { Text("Scegli la stessa registrazione con lo stesso numero e ordine di file. Confermando manterrai i vecchi progressi e segnalibri; una lettura diversa potrebbe non corrispondere.",color=MaterialTheme.colorScheme.error) }
         else item { ListItem(headlineContent={Text("Copia i file nell’app")},supportingContent={Text(if(vm.mustCopyImports)"Copia necessaria: questo archivio non concede accesso permanente." else if(vm.copyImports)"Usa spazio aggiuntivo. Conserva gli originali separatamente." else "Usa gli originali: non spostarli dopo l’importazione.")},trailingContent={Switch(vm.copyImports,{vm.copyImports=it},enabled=!vm.mustCopyImports)}) }
         items(vm.candidates,key={it.id}) { b -> Card(Modifier.animateItem(), colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
@@ -1254,8 +1258,9 @@ private fun Long?.orZero(): Long = this ?: 0L
 @UnstableApi
 @Composable private fun ReorderScreen(vm:LibraryViewModel,id:String, sharedKey: String?) {
     val book=vm.candidates.find{it.id==id}?:return
-    LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        item { Column(Modifier.sottovoceSharedBounds(sharedKey)) { Text("Ordine dei file",style=MaterialTheme.typography.headlineMedium);Text(book.title) } }
+    LazyColumn(Modifier.fillMaxSize().sottovoceSharedBounds(sharedKey),
+        contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
+        item { Column { Text("Ordine dei file",style=MaterialTheme.typography.headlineMedium);Text(book.title) } }
         itemsIndexed(book.tracks,key={_,t->t.id}) { i,t -> ListItem(headlineContent={Text("${i+1}. ${t.name}")},supportingContent={Text(timeLabel(t.durationMs))},trailingContent={Row {
             IconButton(onClick={vm.moveTrack(id,i,i-1)},enabled=i>0){Icon(Icons.Default.ArrowUpward,"Sposta su ${t.name}")}
             IconButton(onClick={vm.moveTrack(id,i,i+1)},enabled=i<book.tracks.lastIndex){Icon(Icons.Default.ArrowDownward,"Sposta giù ${t.name}")}
@@ -1267,8 +1272,9 @@ private fun Long?.orZero(): Long = this ?: 0L
 @Composable private fun SettingsScreen(vm:LibraryViewModel, sharedKey: String?, onTheme:()->Unit,onSkips:()->Unit,onNightDuration:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onInstall:()->Unit) {
     val context=LocalContext.current
     val storage by produceState(0L) {value=withContext(Dispatchers.IO){File(context.filesDir,"books").walkTopDown().filter{it.isFile}.sumOf{it.length()}}}
-    LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
-        item { Surface(Modifier.fillMaxWidth().sottovoceSharedBounds(sharedKey), shape = SottovoceDesign.Soft,
+    LazyColumn(Modifier.fillMaxSize().sottovoceSharedBounds(sharedKey),
+        contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
+        item { Surface(Modifier.fillMaxWidth(), shape = SottovoceDesign.Soft,
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = .72f)) {
             Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Icon(Icons.Default.Settings, null, tint = MaterialTheme.colorScheme.primary)

@@ -4,7 +4,7 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato del codice:** versione 0.4.4. Scarica l’ultima versione pubblicata dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato del codice:** versione 0.4.5. Scarica l’ultima versione pubblicata dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
@@ -25,6 +25,12 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 - Include un widget con capitolo e avanzamento e un riquadro dei comandi rapidi Android per play/pausa.
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
+
+## Novità della 0.4.5
+
+- Collega l’intera pagina, anziché la sola intestazione, alla tessera o al comando da cui è stata aperta: il ritorno resta l’esatto inverso anche dopo aver scorso molto la schermata.
+- Aggiunge una prova automatica che apre un libro in fondo alla libreria, scorre fino alla gestione del libro e verifica che il ritorno mostri ancora il titolo di origine nella stessa zona.
+- Esegue le prove Android con le animazioni abilitate, così la pipeline verifica davvero il codice delle transizioni condivise.
 
 ## Novità della 0.4.4
 

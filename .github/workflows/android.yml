@@ -61,7 +61,7 @@ jobs:
           arch: x86_64
           target: google_apis
           profile: pixel_6
-          disable-animations: true
+          disable-animations: false
           script: |
             ./gradlew connectedDebugAndroidTest --no-daemon
       - name: Conserva risultati e schermate
