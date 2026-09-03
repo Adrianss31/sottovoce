@@ -118,6 +118,8 @@ private val SottovoceTypography = Typography(
     var sharedBookOrigin by remember { mutableStateOf<String?>(null) }
     var sharedSeriesOrigin by remember { mutableStateOf<String?>(null) }
     var sharedStatsOrigin by remember { mutableStateOf<String?>(null) }
+    var sharedSettingsOrigin by remember { mutableStateOf(false) }
+    var sharedReorderKey by remember { mutableStateOf<String?>(null) }
     var predictiveBackProgress by remember { mutableFloatStateOf(0f) }
     val snackbar = remember { SnackbarHostState() }
     val book = books.find { it.id == vm.selectedId }
@@ -164,6 +166,10 @@ private val SottovoceTypography = Typography(
         if (vm.screen == "library") backStack.clear()
         backStack += NavigationFrame(vm.screen, vm.selectedId, vm.selectedSeries)
         navigationDirection = NavigationDirection.Forward
+        // Clear any pending shared-key origins from the previous destination so
+        // the inverse animation has no leftover context.
+        sharedSettingsOrigin = false
+        sharedReorderKey = null
         vm.selectedId = selectedId
         vm.selectedSeries = selectedSeries
         vm.screen = screen
@@ -172,14 +178,23 @@ private val SottovoceTypography = Typography(
         sharedBookOrigin = origin
         navigateTo("detail", selectedId = target.id)
     }
+    fun openSettings() {
+        sharedSettingsOrigin = true
+        navigateTo("settings")
+    }
     fun goBack() {
         navigationDirection = NavigationDirection.Back
         if (reorderId != null) {
             reorderId = null
+            sharedReorderKey = null
             return
         }
         if (vm.screen == "import") { vm.candidates = emptyList(); vm.relinkId = null }
         val previous = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else NavigationFrame("library", null, null)
+        // Reset shared origins for surfaces we are leaving; the next forward
+        // navigation will set them again as needed.
+        sharedSettingsOrigin = false
+        sharedReorderKey = null
         vm.selectedId = previous.selectedId
         vm.selectedSeries = previous.selectedSeries
         vm.screen = previous.screen
@@ -212,8 +227,11 @@ private val SottovoceTypography = Typography(
                         IconButton(onClick = ::goBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Torna indietro") }
                     }
                 }, actions = {
-                    AnimatedVisibility(vm.screen != "settings", enter = fadeIn(tween(160)), exit = fadeOut(tween(120))) {
-                        IconButton(onClick = { navigateTo("settings") }) { Icon(Icons.Default.Settings, "Impostazioni") }
+                    AnimatedVisibility(vm.screen != "settings", enter = fadeIn(tween(160)),
+                        exit = fadeOut(tween(120))) {
+                        IconButton(onClick = ::openSettings, Modifier.sottovoceSharedBounds(if (sharedSettingsOrigin) "settings:source" else null)) {
+                            Icon(Icons.Default.Settings, "Impostazioni")
+                        }
                     }
                 })
             },
@@ -243,13 +261,28 @@ private val SottovoceTypography = Typography(
                     transitionSpec = {
                         val sharedBookTransition = setOf(initialState, targetState).containsAll(setOf("detail")) &&
                             (initialState in setOf("library", "series") || targetState in setOf("library", "series"))
+                        // Surfaces whose forward transition is driven by a
+                        // shared container transform (cover, series card,
+                        // stats card, settings, import preview). For these
+                        // the page-level slide would mask the container
+                        // transform, so we keep only a brief fade. The
+                        // container transform itself animates both
+                        // directions on its own (Compose runs it in
+                        // reverse on back navigation).
+                        val sharedContainerTransition = sharedBookTransition
+                            || (initialState == "library" && targetState == "stats")
+                            || (initialState == "stats" && targetState == "library")
+                            || (initialState == "library" && targetState == "settings")
+                            || (initialState == "settings" && targetState == "library")
+                            || (initialState == "library" && targetState == "series")
+                            || (initialState == "series" && targetState == "library")
                         // Forward motion always comes from the leading edge
                         // (+offset) and back motion mirrors it (-offset) so
                         // that returning through the back affordance feels
                         // like the exact reverse of the path that led here.
                         val fraction = SottovoceMotionTokens.HorizontalOffsetFraction
                         when {
-                            sharedBookTransition -> fadeIn(tween(motion.durationMillis(240))) togetherWith fadeOut(tween(motion.durationMillis(160)))
+                            sharedContainerTransition -> fadeIn(tween(motion.durationMillis(220))) togetherWith fadeOut(tween(motion.durationMillis(160)))
                             navigationDirection == NavigationDirection.Back ->
                                 (fadeIn(tween(motion.durationMillis(220))) + slideInHorizontally(tween(motion.durationMillis(300), easing = SottovoceMotionTokens.StandardEasing)) { -it / fraction }) togetherWith
                                     (fadeOut(tween(motion.durationMillis(150))) + slideOutHorizontally(tween(motion.durationMillis(260), easing = SottovoceMotionTokens.AccelerateEasing)) { it / fraction })
@@ -290,19 +323,23 @@ private val SottovoceTypography = Typography(
                                 onRemove = { dialog = "remove" }, onRemoveCopies = { dialog = "copies" },
                                 onDeleteMark = { id -> vm.task("Rimozione…") { vm.library.removeBookmark(id) } })
                             "import" -> AnimatedContent(reorderId, transitionSpec = {
+                                // Whenever the preview <-> reorder transition
+                                // carries a shared key, the container
+                                // transform animates the bounds and the
+                                // inner content on its own, so the page
+                                // itself should only fade; otherwise keep
+                                // the mirrored horizontal slide as a
+                                // directional cue.
+                                val sharedImport = sharedReorderKey != null
                                 val importFraction = SottovoceMotionTokens.HorizontalOffsetFraction
-                                // Opening the reorder list is a forward step:
-                                // the detail slides in from the trailing edge
-                                // and the preview leaves through the leading
-                                // edge. Returning to the preview mirrors it
-                                // so the back action reads as the inverse of
-                                // the gesture that opened the reorder.
-                                if (targetState != null) (fadeIn(tween(180)) + slideInHorizontally { it / importFraction }) togetherWith (fadeOut(tween(140)) + slideOutHorizontally { -it / importFraction })
+                                if (sharedImport) fadeIn(tween(200)) togetherWith fadeOut(tween(160))
+                                else if (targetState != null) (fadeIn(tween(180)) + slideInHorizontally { it / importFraction }) togetherWith (fadeOut(tween(140)) + slideOutHorizontally { -it / importFraction })
                                 else (fadeIn(tween(180)) + slideInHorizontally { -it / importFraction }) togetherWith (fadeOut(tween(140)) + slideOutHorizontally { it / importFraction })
                             }, label = "anteprima e riordino") { selected ->
-                                if (selected != null) ReorderScreen(vm, selected) else ImportPreview(vm, onReorder = { reorderId = it })
+                                if (selected != null) ReorderScreen(vm, selected, sharedReorderKey) else ImportPreview(vm, sharedReorderKey) { reorderId = it; sharedReorderKey = it }
                             }
                             "settings" -> SettingsScreen(vm,
+                                sharedKey = if (sharedSettingsOrigin) "settings:source" else null,
                                 onTheme = { dialog = "theme" }, onSkips = { dialog = "skips" },
                                 onNightDuration = { dialog = "nightDuration" },
                                 onBackup = { backupExport.launch(Intent(Intent.ACTION_CREATE_DOCUMENT).setType("application/json").addCategory(Intent.CATEGORY_OPENABLE)
@@ -1174,9 +1211,9 @@ private fun Long?.orZero(): Long = this ?: 0L
 }
 
 @UnstableApi
-@Composable private fun ImportPreview(vm:LibraryViewModel,onReorder:(String)->Unit) {
+@Composable private fun ImportPreview(vm:LibraryViewModel, sharedKey: String?, onReorder:(String)->Unit) {
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(16.dp)) {
-        item { Text(if(vm.relinkId!=null)"Ricollega la registrazione" else "Controlla l’importazione",style=MaterialTheme.typography.headlineMedium) }
+        item { Column(Modifier.sottovoceSharedBounds(sharedKey)) { Text(if(vm.relinkId!=null)"Ricollega la registrazione" else "Controlla l’importazione",style=MaterialTheme.typography.headlineMedium) } }
         if(vm.relinkId!=null) item { Text("Scegli la stessa registrazione con lo stesso numero e ordine di file. Confermando manterrai i vecchi progressi e segnalibri; una lettura diversa potrebbe non corrispondere.",color=MaterialTheme.colorScheme.error) }
         else item { ListItem(headlineContent={Text("Copia i file nell’app")},supportingContent={Text(if(vm.mustCopyImports)"Copia necessaria: questo archivio non concede accesso permanente." else if(vm.copyImports)"Usa spazio aggiuntivo. Conserva gli originali separatamente." else "Usa gli originali: non spostarli dopo l’importazione.")},trailingContent={Switch(vm.copyImports,{vm.copyImports=it},enabled=!vm.mustCopyImports)}) }
         items(vm.candidates,key={it.id}) { b -> Card(Modifier.animateItem(), colors=CardDefaults.cardColors(containerColor=MaterialTheme.colorScheme.surfaceVariant)) {
@@ -1191,10 +1228,10 @@ private fun Long?.orZero(): Long = this ?: 0L
     }
 }
 @UnstableApi
-@Composable private fun ReorderScreen(vm:LibraryViewModel,id:String) {
+@Composable private fun ReorderScreen(vm:LibraryViewModel,id:String, sharedKey: String?) {
     val book=vm.candidates.find{it.id==id}?:return
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(8.dp)) {
-        item {Text("Ordine dei file",style=MaterialTheme.typography.headlineMedium);Text(book.title)}
+        item { Column(Modifier.sottovoceSharedBounds(sharedKey)) { Text("Ordine dei file",style=MaterialTheme.typography.headlineMedium);Text(book.title) } }
         itemsIndexed(book.tracks,key={_,t->t.id}) { i,t -> ListItem(headlineContent={Text("${i+1}. ${t.name}")},supportingContent={Text(timeLabel(t.durationMs))},trailingContent={Row {
             IconButton(onClick={vm.moveTrack(id,i,i-1)},enabled=i>0){Icon(Icons.Default.ArrowUpward,"Sposta su ${t.name}")}
             IconButton(onClick={vm.moveTrack(id,i,i+1)},enabled=i<book.tracks.lastIndex){Icon(Icons.Default.ArrowDownward,"Sposta giù ${t.name}")}
@@ -1203,11 +1240,11 @@ private fun Long?.orZero(): Long = this ?: 0L
 }
 
 @UnstableApi
-@Composable private fun SettingsScreen(vm:LibraryViewModel,onTheme:()->Unit,onSkips:()->Unit,onNightDuration:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onInstall:()->Unit) {
+@Composable private fun SettingsScreen(vm:LibraryViewModel, sharedKey: String?, onTheme:()->Unit,onSkips:()->Unit,onNightDuration:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onInstall:()->Unit) {
     val context=LocalContext.current
     val storage by produceState(0L) {value=withContext(Dispatchers.IO){File(context.filesDir,"books").walkTopDown().filter{it.isFile}.sumOf{it.length()}}}
     LazyColumn(contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
-        item {Text("Impostazioni",style=MaterialTheme.typography.headlineLarge)}
+        item { Column(Modifier.sottovoceSharedBounds(sharedKey)) { Text("Impostazioni",style=MaterialTheme.typography.headlineLarge) } }
         item {SettingRow("Aspetto",when(vm.theme){"dark"->"Scuro";"light"->"Chiaro";else->"Come il sistema"},Icons.Default.Palette,onTheme)}
         item {SettingRow("Salti del lettore","Indietro ${vm.skipBack} s · avanti ${vm.skipForward} s",Icons.Default.Replay,onSkips)}
         item {Text("Ascolto",style=MaterialTheme.typography.titleLarge)}
