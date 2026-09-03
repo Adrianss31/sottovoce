@@ -118,7 +118,7 @@ class AppSmokeTest {
         compose.onNodeWithTag("play_pause").performClick()
         compose.waitUntil(5000){!vm.now.playing}
         screenshot("03-player")
-        compose.onAllNodesWithText("Seconda parte").onLast().performScrollTo()
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasText("Seconda parte"))
         screenshot("04-chapters")
         compose.onNodeWithText("Segnalibro",substring=false).performScrollTo().performClick()
         compose.onNodeWithText("Nota facoltativa").performTextInput("Un passaggio da ricordare")
