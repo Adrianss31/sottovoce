@@ -108,6 +108,7 @@ class AppSmokeTest {
         val second = compose.onNodeWithTag("chapter_2").fetchSemanticsNode().boundsInRoot
         assertEquals(first.top, second.top, 1f)
         assertTrue(second.left >= first.right)
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("chapter_9"))
         screenshot("06-chapter-columns")
         compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("chapter_21"))
         compose.onNodeWithTag("chapter_21").assertIsDisplayed()
@@ -154,7 +155,7 @@ class AppSmokeTest {
         } finally { compose.mainClock.autoAdvance = true }
         compose.waitForIdle()
         screenshot("09-cover-destination")
-        compose.onNodeWithText("Gestione del libro").performScrollTo()
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasText("Gestione del libro"))
         compose.mainClock.autoAdvance = false
         try {
             compose.onNodeWithContentDescription("Torna indietro").performClick()
@@ -200,7 +201,7 @@ class AppSmokeTest {
         compose.waitUntil(10_000) { app.library.books.value.size == newer.size + 1 }
         compose.onNodeWithTag("library").performScrollToNode(hasTestTag("book_${target.id}"))
         compose.onNodeWithTag("book_${target.id}").performClick()
-        compose.onNodeWithText("Gestione del libro").performScrollTo()
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasText("Gestione del libro"))
         compose.onNodeWithContentDescription("Torna indietro").performClick()
         compose.onNodeWithTag("book_${target.id}").assertIsDisplayed()
         compose.onNodeWithTag("book_${newer.last().id}").assertDoesNotExist()

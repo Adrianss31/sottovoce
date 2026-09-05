@@ -244,7 +244,7 @@ private val SottovoceTypography = Typography(
                         (EnterTransition.None togetherWith ExitTransition.None).using(SizeTransform(clip = false))
                     }, label = "navigazione contestuale") { screen ->
                     CompositionLocalProvider(LocalAnimatedVisibilityScope provides this@AnimatedContent) {
-                        Box(Modifier.fillMaxSize().graphicsLayer {
+                        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).graphicsLayer {
                             if (screen == vm.screen && predictiveBackProgress > 0f) {
                                 translationX = size.width * .16f * predictiveBackProgress
                                 scaleX = 1f - .018f * predictiveBackProgress
@@ -739,7 +739,7 @@ private fun seriesLabel(book: Book): String = book.series + (book.seriesPosition
     val colors = listOf(Color(0xFFE3B786), Color(0xFFB4C8CE), Color(0xFFD6B0A3))
     BoxWithConstraints(modifier.aspectRatio(2f/3f).clip(SottovoceDesign.Cover).background(colors[(book.title.hashCode() and Int.MAX_VALUE)%colors.size])) {
         val compact = maxWidth < 72.dp
-        CrossfadeCoverImage(book.coverPath, "Copertina di ${book.title}", Modifier.fillMaxSize()) {
+        CoverImage(book.coverPath, "Copertina di ${book.title}", Modifier.fillMaxSize()) {
             if (compact) Text(book.title.trim().take(1).uppercase(), Modifier.align(Alignment.Center),
                 fontFamily = FontFamily.Serif, fontSize = 25.sp, color = Color(0xFF302C22))
             else Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.SpaceBetween) {
@@ -939,8 +939,8 @@ private fun shortDuration(ms: Long): String {
                 }
             }
         } }
-        item { Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = SottovoceDesign.Card, shadowElevation = 1.dp) {
-            Column(Modifier.fillMaxWidth().bookDetailsReveal().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        item { Surface(Modifier.bookDetailsReveal(), color = MaterialTheme.colorScheme.primaryContainer, shape = SottovoceDesign.Card, shadowElevation = 1.dp) {
+            Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         AnimatedContent(current?.ordinal, transitionSpec = {

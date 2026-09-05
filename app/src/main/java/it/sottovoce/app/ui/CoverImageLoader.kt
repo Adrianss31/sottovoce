@@ -3,8 +3,6 @@ package it.sottovoce.app.ui
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
-import androidx.compose.animation.Crossfade
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -26,7 +24,6 @@ import kotlin.math.min
 
 private const val DEFAULT_COVER_EDGE_PX = 512
 private const val MAX_COVER_EDGE_PX = 2_048
-private const val COVER_CROSSFADE_MS = 180
 
 private data class CoverRequest(
     val path: String,
@@ -57,6 +54,7 @@ private object CoverBitmapCache {
 
     fun peek(request: CoverRequest): ImageBitmap? =
         latestKey[request]?.let(bitmaps::get)
+            ?: bitmaps.snapshot().entries.firstOrNull { it.key.request.path == request.path }?.value
 
     fun get(key: CoverCacheKey): ImageBitmap? = bitmaps.get(key)
 
@@ -136,11 +134,11 @@ internal fun rememberCoverBitmap(
 }
 
 /**
- * Ready-to-use cover surface with a bounded placeholder-to-bitmap crossfade.
+ * Draw the original image directly: a second crossfade would obscure shared cover motion.
  * Its modifier should provide bounded dimensions (for example width + aspectRatio).
  */
 @Composable
-internal fun CrossfadeCoverImage(
+internal fun CoverImage(
     path: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
@@ -148,7 +146,6 @@ internal fun CrossfadeCoverImage(
     placeholder: @Composable BoxScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier) {
-        val motion = LocalMotionPolicy.current
         val requestedWidthPx = if (constraints.hasBoundedWidth) {
             constraints.maxWidth.coerceAtLeast(1)
         } else {
@@ -161,21 +158,11 @@ internal fun CrossfadeCoverImage(
         }
         val bitmap = rememberCoverBitmap(path, requestedWidthPx, requestedHeightPx)
 
-        Crossfade(
-            targetState = bitmap,
-            animationSpec = tween(motion.durationMillis(COVER_CROSSFADE_MS)),
-            label = "cover placeholder to bitmap",
-        ) { loaded ->
-            if (loaded == null) {
-                Box(Modifier.fillMaxSize(), content = placeholder)
-            } else {
-                Image(
-                    bitmap = loaded,
-                    contentDescription = contentDescription,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = contentScale,
-                )
-            }
+        if (bitmap == null) {
+            Box(Modifier.fillMaxSize(), content = placeholder)
+        } else {
+            Image(bitmap = bitmap, contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(), contentScale = contentScale)
         }
     }
 }
