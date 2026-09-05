@@ -96,6 +96,13 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
     private var listeningBook = ""
     private var listeningSince = -1L
     private var listeningAccumulated = 0L
+    private var listeningDay = java.time.LocalDate.now().toEpochDay()
+    private val preferenceListener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == "timerShakeExtend") {
+            sensorManager.unregisterListener(this)
+            if (timerActive()) registerShakeIfEnabled()
+        }
+    }
     private val timerCommand = SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND, Bundle.EMPTY)
     private fun timerActive() = deadline > 0 || chapterTrack >= 0
     private fun mediaButtons() = listOf(
@@ -128,25 +135,37 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
     /** Accumula il tempo reale trascorso in riproduzione per le statistiche locali. */
     private fun accumulateListening() {
         if (!::player.isInitialized) return
-        val id = currentBookId()
-        if (player.isPlaying && id != null) {
-            if (id != listeningBook) { flushListening(); listeningBook = id }
-            val now = SystemClock.elapsedRealtime()
-            if (listeningSince >= 0) listeningAccumulated += (now - listeningSince).coerceIn(0, 5_000L)
-            listeningSince = now
-        } else listeningSince = -1L
+        val now = SystemClock.elapsedRealtime()
+        val day = java.time.LocalDate.now().toEpochDay()
+        if (listeningSince >= 0) {
+            val delta = (now - listeningSince).coerceAtLeast(0)
+            if (day != listeningDay) {
+                val midnight = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val todayPart = (System.currentTimeMillis() - midnight).coerceIn(0, delta)
+                listeningAccumulated += delta - todayPart
+                flushListening()
+                listeningDay = day
+                listeningAccumulated += todayPart
+            } else listeningAccumulated += delta
+        }
+        if (listeningBook != currentBookId()) flushListening()
+        listeningDay = day
+        listeningBook = currentBookId().orEmpty()
+        listeningSince = if (player.isPlaying) now else -1L
     }
     private fun flushListening() {
         val bookId = listeningBook
         val accumulated = listeningAccumulated
-        listeningBook = ""; listeningSince = -1L; listeningAccumulated = 0L
+        val day = listeningDay
+        listeningAccumulated = 0L
         if (bookId.isBlank() || accumulated <= 0) return
-        app.scope.launch { runCatching { app.library.recordListening(bookId, accumulated) } }
+        app.scope.launch { app.library.recordListening(bookId, accumulated, day) }
     }
     override fun onCreate() {
         super.onCreate()
         val prefs = getSharedPreferences("preferences", MODE_PRIVATE)
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        prefs.registerOnSharedPreferenceChangeListener(preferenceListener)
         val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
         val playerBuilder = if (Build.VERSION.SDK_INT >= 30) ExoPlayer.Builder(this, renderers, PlatformMediaSourceFactory(this))
             else ExoPlayer.Builder(this, renderers)
@@ -159,16 +178,29 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
                 setWakeMode(C.WAKE_MODE_LOCAL)
                 addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        android.service.quicksettings.TileService.requestListeningState(this@PlaybackService,
+                            android.content.ComponentName(this@PlaybackService, PlaybackTileService::class.java))
                         if (isPlaying) maybeStartNightTimer()
                         save()
                     }
                     override fun onPlaybackStateChanged(playbackState: Int) { if (playbackState == Player.STATE_ENDED) save(finished = true) }
                     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+                        oldPosition.mediaItem?.mediaMetadata?.extras?.let { extras ->
+                            extras.getString("bookId")?.let { id ->
+                                enqueuePosition(id, extras.getInt("trackIndex"), extras.getLong("chapterStartMs", 0) + oldPosition.positionMs, player.playbackParameters.speed)
+                            }
+                        }
+                        if (reason == Player.DISCONTINUITY_REASON_SEEK) {
+                            getSharedPreferences("preferences", MODE_PRIVATE).edit().remove("smartPauseBook").remove("smartPauseAt").apply()
+                            if (chapterTrack >= 0) stopTimer(false)
+                        }
                         refreshSingleSourceChapterTimer()
                         save()
                     }
                     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                        if (chapterTrack >= 0 && player.currentMediaItemIndex != chapterTrack) finishChapterTimer()
+                        if (chapterTrack >= 0 && player.currentMediaItemIndex != chapterTrack) {
+                            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) finishChapterTimer() else stopTimer(false)
+                        }
                         save()
                     }
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -208,7 +240,8 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
                     .setMediaButtonPreferences(mediaButtons()).build()
             }
             override fun onAddMediaItems(session: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
-                val known = app.library.books.value.flatMap { it.mediaItems() }.associateBy { it.mediaId }
+                val requestedBooks = mediaItems.map { it.mediaId.substringBefore('/') }.toSet()
+                val known = app.library.books.value.filter { it.id in requestedBooks }.flatMap { it.mediaItems() }.associateBy { it.mediaId }
                 val resolved = mediaItems.mapNotNull { request ->
                     known[request.mediaId]?.takeIf { item -> app.library.isSafeAudioUri(item.localConfiguration?.uri.toString()) }
                 }.toMutableList()
@@ -287,13 +320,17 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
 
     private fun save(finished: Boolean = false) {
         if (!::player.isInitialized) return
+        accumulateListening()
+        flushListening()
         val extras = player.currentMediaItem?.mediaMetadata?.extras ?: return
         val id = extras.getString("bookId") ?: return
         val index = extras.getInt("trackIndex")
         val position = (extras.getLong("chapterStartMs", 0) + player.currentPosition).coerceAtLeast(0)
         val speed = player.playbackParameters.speed
         WidgetUpdater.update(this, id, index, position, player.isPlaying)
-        flushListening()
+        enqueuePosition(id, index, position, speed, finished)
+    }
+    private fun enqueuePosition(id: String, index: Int, position: Long, speed: Float, finished: Boolean = false) {
         val previousSave = positionSaveJob
         positionSaveJob = app.scope.launch {
             previousSave?.join()
@@ -314,7 +351,11 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
         prefs.edit().remove("smartPauseBook").remove("smartPauseAt").apply()
         if (!prefs.getBoolean("smartRewind", true) || pausedBook != id || pausedAt <= 0L) return
         val rewind = smartRewindForPause((System.currentTimeMillis() - pausedAt).coerceAtLeast(0))
-        if (rewind > 0 && player.currentPosition > 0) player.seekTo((player.currentPosition - rewind).coerceAtLeast(0))
+        val extras = player.currentMediaItem?.mediaMetadata?.extras
+        val floor = if (extras?.getBoolean("singleSource", false) == true)
+            app.library.books.value.find { it.id == id }?.currentChapter(extras.getInt("trackIndex"), player.currentPosition)?.startMs ?: 0L
+            else 0L
+        if (rewind > 0 && player.currentPosition > floor) player.seekTo((player.currentPosition - rewind).coerceAtLeast(floor))
     }
     private fun maybeStartNightTimer() {
         if (timerActive()) return
@@ -419,7 +460,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
         updateMediaButtons()
     }
     override fun onSensorChanged(event: SensorEvent) {
-        if (!timerActive() || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
+        if (!getSharedPreferences("preferences", MODE_PRIVATE).getBoolean("timerShakeExtend", false) || !timerActive() || event.sensor.type != Sensor.TYPE_ACCELEROMETER) return
         val force = sqrt(event.values.sumOf { (it * it).toDouble() }).toFloat() / SensorManager.GRAVITY_EARTH
         val now = SystemClock.elapsedRealtime()
         if (force >= 2.4f && now - lastShakeAt > 3_000L) {
@@ -430,6 +471,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
     override fun onDestroy() {
+        getSharedPreferences("preferences", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(preferenceListener)
         handler.removeCallbacks(tick)
         if (::player.isInitialized && player.playWhenReady) rememberPause()
         save(); stopTimer(false)

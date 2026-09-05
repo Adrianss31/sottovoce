@@ -9,3 +9,7 @@ Non equivale a una certificazione su ogni dispositivo: vanno ancora provati Andr
 ## Verifica della 0.5.0
 
 La suite aggiunge quattro prove strumentali: pannello fissato soltanto durante l’audio, compattazione e ritorno in cima; geometria affiancata delle coppie di capitoli e riproduzione dell’ultimo capitolo dispari; azzeramento di un libro attivo e di uno completato, persistenza sul database, conservazione dei segnalibri e ripartenza dall’inizio. Le schermate degli artifact includono pannello compatto e capitoli in due colonne. Restano le prove di navigazione da un libro in fondo alla libreria e le verifiche multimediali precedenti. Una prova aggiuntiva cattura copertine reali di rapporto differente e fotogrammi intermedi di apertura/ritorno, oltre alla libreria scura. La suite comprende: 15 test unitari e 12 prove Android, con animazioni abilitate.
+
+## Verifica 0.6.0
+
+18 test unitari: aggiunte regressioni per introduzione precedente al primo marcatore, duplicati e marcatori fuori durata, salti attraverso più tracce, backup delle statistiche e compatibilità versione 1. Il test Android del backup ora controlla statistiche, recupero delle copie private e presenza della copia precedente. Compilazioni debug, release e test Android, oltre a lint. La verifica fisica di Bluetooth, sensore, codec reali e installazione sul telefono resta necessaria.

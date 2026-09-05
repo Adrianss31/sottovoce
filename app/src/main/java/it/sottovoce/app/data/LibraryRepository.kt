@@ -52,22 +52,30 @@ class LibraryRepository(private val context: Context) {
             db.writableDatabase.insertOrThrow("books", null, values)
     }
     suspend fun add(books: List<Book>) = withContext(Dispatchers.IO) { mutex.withLock {
+        require((_books.value.map { it.id } + books.map { it.id }).distinct().size <= 2000) { "Limite di 2000 libri raggiunto." }
+        validateBackup(Backup(books = books, bookmarks = emptyList()))
         val database = db.writableDatabase
         database.beginTransaction()
         try { books.forEach(::write); database.setTransactionSuccessful() } finally { database.endTransaction() }
         refresh()
     } }
     suspend fun update(id: String, transform: (Book) -> Book) = withContext(Dispatchers.IO) { mutex.withLock {
-        _books.value.firstOrNull { it.id == id }?.let { write(transform(it)); refresh() }
+        _books.value.firstOrNull { it.id == id }?.let {
+            val changed = transform(it)
+            write(changed)
+            _books.value = _books.value.map { old -> if (old.id == id) changed else old }
+                .sortedByDescending { maxOf(it.lastPlayedAt, it.createdAt) }
+        }
     } }
     suspend fun savePosition(id: String, index: Int, position: Long, speed: Float, finished: Boolean = false) = update(id) { b ->
         if (index !in b.tracks.indices) b else b.copy(
-            trackIndex = index, positionMs = position.coerceAtLeast(0), speed = speed,
+            trackIndex = index, positionMs = position.coerceIn(0, b.tracks[index].durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE), speed = speed,
             lastPlayedAt = System.currentTimeMillis(), completed = finished || b.completed,
         )
     }
     suspend fun bookmark(mark: Bookmark) = withContext(Dispatchers.IO) { mutex.withLock {
         if (_books.value.none { it.id == mark.bookId }) return@withLock
+        require(_bookmarks.value.size < 50_000) { "Limite di segnalibri raggiunto. Elimina quelli non più necessari." }
         db.writableDatabase.insertOrThrow("bookmarks", null, ContentValues().apply {
             put("id", mark.id); put("book_id", mark.bookId); put("data", AppJson.encodeToString(mark))
         }); refresh()
@@ -99,9 +107,8 @@ class LibraryRepository(private val context: Context) {
         }
     }
     /** Accumula il tempo di ascolto reale per libro e giorno corrente. Le statistiche restano sul dispositivo. */
-    suspend fun recordListening(bookId: String, deltaMs: Long) = withContext(Dispatchers.IO) { mutex.withLock {
+    suspend fun recordListening(bookId: String, deltaMs: Long, day: Long = LocalDate.now().toEpochDay()) = withContext(Dispatchers.IO) { mutex.withLock {
         if (deltaMs <= 0 || _books.value.none { it.id == bookId }) return@withLock
-        val day = LocalDate.now().toEpochDay()
         val database = db.writableDatabase
         database.execSQL("UPDATE sessions SET duration_ms = duration_ms + ? WHERE book_id = ? AND day = ?", arrayOf(deltaMs, bookId, day))
         val exists = database.rawQuery("SELECT 1 FROM sessions WHERE book_id = ? AND day = ?", arrayOf(bookId, day.toString())).use { it.moveToFirst() }
@@ -110,10 +117,12 @@ class LibraryRepository(private val context: Context) {
         })
     } }
     suspend fun listeningDays(): List<ListeningDay> = withContext(Dispatchers.IO) { mutex.withLock {
+        readSessions()
+    } }
+    private fun readSessions(): List<ListeningDay> =
         db.readableDatabase.rawQuery("SELECT book_id, day, duration_ms FROM sessions", null).use { c ->
             buildList { while (c.moveToNext()) add(ListeningDay(c.getString(0), c.getLong(1), c.getLong(2))) }
         }
-    } }
     private fun preferences(): Preferences {
         val prefs = context.getSharedPreferences("preferences", Context.MODE_PRIVATE)
         return Preferences(
@@ -130,18 +139,45 @@ class LibraryRepository(private val context: Context) {
         )
     }
     suspend fun exportBackup(): Backup = withContext(Dispatchers.IO) { mutex.withLock {
-        Backup(books = _books.value.map { b ->
+        validateBackup(Backup(books = _books.value.map { b ->
             b.copy(coverPath = null, needsRelink = true, tracks = b.tracks.map { it.copy(uri = "", owned = false) })
-        }, bookmarks = _bookmarks.value, preferences = preferences())
+        }, bookmarks = _bookmarks.value, preferences = preferences(), sessions = readSessions())).also {
+            require(AppJson.encodeToString(it).toByteArray().size <= 16 * 1024 * 1024) { "Backup troppo grande: esportazione annullata." }
+        }
+    } }
+    suspend fun recoveryBackup(): Backup = withContext(Dispatchers.IO) {
+        validateBackup(AppJson.decodeFromString<Backup>(File(context.filesDir, "before-restore.json").readText()))
+    }
+    fun hasRecovery(): Boolean = File(context.filesDir, "before-restore.json").isFile
+    suspend fun cleanIncompleteCopies(): Int = withContext(Dispatchers.IO) { mutex.withLock {
+        // Only incomplete imports are disposable; complete audio may be needed by recovery.
+        var count = 0
+        File(context.filesDir, "books").listFiles()?.forEach { directory ->
+            directory.listFiles()?.filter { it.extension == "part" }?.forEach { if (it.delete()) count++ }
+        }
+        count
     } }
     suspend fun restore(backup: Backup) = withContext(Dispatchers.IO) { mutex.withLock {
-        val safe = validateBackup(backup)
+        val validated = validateBackup(backup)
+        val localSessions = readSessions()
+        val safe = validated.copy(books = validated.books.map { book ->
+            val existing = _books.value.find { it.id == book.id }
+            val directory = ownedDirectory(book.id)
+            val tracks = book.tracks.map { track ->
+                val local = existing?.tracks?.find { it.id == track.id && it.owned && isSafeAudioUri(it.uri) }
+                    ?.let { File(Uri.parse(it.uri).path.orEmpty()) }?.takeIf { it.isFile }
+                    ?: directory.listFiles()?.firstOrNull { it.name.substringBeforeLast('.') == track.id && it.extension != "part" && it.isFile }
+                if (local != null && (track.size == 0L || track.size == local.length())) track.copy(uri = Uri.fromFile(local).toString(), owned = true) else track
+            }
+            book.copy(tracks = tracks, needsRelink = tracks.any { it.uri.isEmpty() },
+                coverPath = File(directory, "cover.jpg").takeIf { it.isFile }?.absolutePath)
+        }, sessions = if (backup.version == 1) localSessions.filter { day -> validated.books.any { it.id == day.bookId } } else validated.sessions)
         // Recovery snapshot is local and excludes audio. Never delete audio during restore.
         val recovery = File(context.filesDir, "before-restore.json")
         val atomic = android.util.AtomicFile(recovery)
         val stream = atomic.startWrite()
         try {
-            stream.write(AppJson.encodeToString(Backup(books = _books.value, bookmarks = _bookmarks.value, preferences = preferences())).toByteArray())
+            stream.write(AppJson.encodeToString(Backup(books = _books.value, bookmarks = _bookmarks.value, preferences = preferences(), sessions = localSessions)).toByteArray())
             atomic.finishWrite(stream)
         } catch (e: Exception) { atomic.failWrite(stream); throw e }
         val database = db.writableDatabase
@@ -151,6 +187,9 @@ class LibraryRepository(private val context: Context) {
             safe.books.forEach(::write)
             safe.bookmarks.forEach { m -> database.insertOrThrow("bookmarks", null, ContentValues().apply {
                 put("id", m.id); put("book_id", m.bookId); put("data", AppJson.encodeToString(m))
+            }) }
+            safe.sessions.forEach { day -> database.insertOrThrow("sessions", null, ContentValues().apply {
+                put("book_id", day.bookId); put("day", day.day); put("duration_ms", day.durationMs)
             }) }
             database.setTransactionSuccessful()
         } finally { database.endTransaction() }

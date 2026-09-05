@@ -16,6 +16,31 @@ import java.time.LocalDate
 import java.util.Base64
 
 class CoreTest {
+    @Test fun chapterNormalizationPreservesIntroAndRemovesEmptySegments() {
+        val track = AudioTrack(uri = "", name = "Audio", durationMs = 30_000,
+            chapters = listOf(Chapter("First", 12_500), Chapter("Duplicate", 12_500), Chapter("Invalid", 40_000)))
+        val book = Book(title = "Book", tracks = listOf(track))
+        assertEquals(listOf(0L, 12_500L), book.chapterTimeline().map { it.startMs })
+        assertEquals(2, book.playbackItemCount())
+        assertEquals(ChapterPlaybackStart(0, 0), book.chapterPlaybackStart())
+        assertTrue(book.playbackSegments().all { it.endMs > it.startMs })
+    }
+    @Test fun skipsCrossAnyNumberOfTracksAndClampAtBookEnds() {
+        val book = Book(title = "Book", tracks = (1..5).map { AudioTrack(uri = "", name = "$it", durationMs = 10_000) })
+        assertEquals(3 to 5_000L, book.positionAfterSkip(0, 5_000, 30_000))
+        assertEquals(0 to 5_000L, book.positionAfterSkip(3, 5_000, -30_000))
+        assertEquals(0 to 0L, book.positionAfterSkip(3, 5_000, -100_000))
+        assertEquals(4 to 10_000L, book.positionAfterSkip(0, 0, 100_000))
+    }
+    @Test fun backupIncludesStatisticsAndReadsVersionOne() {
+        val book = Book(title = "Book", tracks = listOf(AudioTrack(uri = "", name = "Audio")))
+        val backup = Backup(books = listOf(book), bookmarks = emptyList(), sessions = listOf(ListeningDay(book.id, 20_000, 60_000)))
+        val roundTrip = validateBackup(AppJson.decodeFromString<Backup>(AppJson.encodeToString(backup)))
+        assertEquals(backup.sessions, roundTrip.sessions)
+        assertEquals(1, validateBackup(backup.copy(version = 1, sessions = emptyList())).version)
+        assertEquals(30_000L, listeningTime(60_000, 2f))
+    }
+
     @Test fun chapterFilesAreSortedNumericallyWithoutIntegerOverflow() {
         assertEquals(listOf("01.mp3","2.mp3","10.mp3","999999999999999999999999.mp3"),
             listOf("10.mp3","999999999999999999999999.mp3","2.mp3","01.mp3").sortedWith(NaturalOrder))

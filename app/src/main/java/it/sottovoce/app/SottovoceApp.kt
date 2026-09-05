@@ -9,7 +9,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 class SottovoceApp : Application() {
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+        android.util.Log.e("Sottovoce", "Operazione locale non riuscita", error)
+        it.sottovoce.app.playback.PlaybackSignals.error.value = "Impossibile salvare o leggere i dati. Controlla lo spazio disponibile e riapri l’app."
+    })
     lateinit var library: LibraryRepository
         private set
     override fun onCreate() {

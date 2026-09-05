@@ -65,6 +65,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         private set
     var now by mutableStateOf(NowPlaying())
         private set
+    var operationDetail by mutableStateOf<String?>(null)
+        private set
     var busy by mutableStateOf<String?>(null)
         private set
     var message by mutableStateOf<String?>(null)
@@ -73,6 +75,25 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         private set
     var copyImports by mutableStateOf(false)
     var relinkId by mutableStateOf<String?>(null)
+    var undoReset: Book? = null
+    var pendingTimer: Pair<String, Int>? = null
+    fun undoReset() = task("Ripristino posizione…") {
+        val previous = undoReset ?: return@task
+        if (now.bookId == previous.id) stopCurrent()
+        library.update(previous.id) { it.copy(trackIndex = previous.trackIndex, positionMs = previous.positionMs,
+            lastPlayedAt = previous.lastPlayedAt, completed = previous.completed) }
+        undoReset = null
+        message = "Posizione ripristinata."
+    }
+    fun splitCandidates() {
+        candidates = candidates.flatMap { book -> book.tracks.map { track ->
+            book.copy(id = java.util.UUID.randomUUID().toString(), title = track.name.substringBeforeLast('.'), tracks = listOf(track))
+        } }
+    }
+    fun recoverBackup() = task("Lettura copia di sicurezza…") { pendingBackup = library.recoveryBackup() }
+    fun cleanIncompleteCopies() = task("Pulizia copie incomplete…") {
+        message = "${library.cleanIncompleteCopies()} copie incomplete eliminate."
+    }
     var pendingBackup by mutableStateOf<Backup?>(null)
     var release by mutableStateOf<ReleaseInfo?>(null)
         private set
@@ -126,7 +147,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             busy = label
             try { action() } catch (e: CancellationException) { throw e }
             catch (e: Exception) { message = e.message ?: "Operazione non riuscita." }
-            finally { busy = null }
+            finally { busy = null; operationDetail = null }
         }
     }
     fun cancelTask() { operation?.cancel() }
@@ -155,7 +176,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
     fun changeCandidate(id: String, title: String? = null, author: String? = null) {
-        candidates = candidates.map { if (it.id != id) it else it.copy(title = title ?: it.title, author = author ?: it.author) }
+        candidates = candidates.map { if (it.id != id) it else it.copy(title = title?.take(1000) ?: it.title, author = author?.take(1000) ?: it.author) }
     }
     fun moveTrack(bookId: String, from: Int, to: Int) {
         candidates = candidates.map { b -> if (b.id != bookId || from !in b.tracks.indices || to !in b.tracks.indices) b else {
@@ -165,7 +186,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun confirmImport() = task(if (copyImports) "Copia dei file…" else "Importazione…") {
         val replacing = relinkId
         if (replacing != null && now.bookId == replacing) stopCurrent()
-        val count = importer.commit(candidates, (copyImports || mustCopyImports) && replacing == null, replacing)
+        val count = importer.commit(candidates, (copyImports || mustCopyImports) && replacing == null, replacing) { detail -> viewModelScope.launch { operationDetail = detail } }
         refreshStats()
         candidates = emptyList(); relinkId = null; screen = "library"
         message = if (replacing != null) "File ricollegati. Progressi e segnalibri conservati." else "$count ${if (count == 1) "libro importato" else "libri importati"}."
@@ -184,7 +205,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             c.seekTo(start.itemIndex, start.positionMs)
         }
         if (c.playbackState == Player.STATE_IDLE) c.prepare()
-        c.play(); snapshot()
+        c.play()
+        pendingTimer?.takeIf { it.first == book.id }?.let { timer(it.second); pendingTimer = null }
+        snapshot()
     }
     fun togglePlay() {
         val current = controller ?: return
@@ -208,25 +231,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
     fun skip(seconds: Int) {
         val book = library.books.value.find { it.id == now.bookId } ?: return
-        var track = now.trackIndex
-        var target = now.position + seconds * 1000L
-        when {
-            target < 0 && track > 0 -> {
-                track -= 1
-                target = (book.tracks[track].durationMs + target).coerceAtLeast(0)
-            }
-            book.tracks[track].durationMs > 0 && target > book.tracks[track].durationMs && track < book.tracks.lastIndex -> {
-                target -= book.tracks[track].durationMs
-                track += 1
-            }
-        }
-        val start = book.chapterPlaybackStart(track, target.coerceIn(0, book.tracks[track].durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE))
+        val (track, target) = book.positionAfterSkip(now.trackIndex, now.position, seconds * 1000L)
+        val start = book.chapterPlaybackStart(track, target)
         controller?.seekTo(start.itemIndex, start.positionMs)
         snapshot()
     }
     fun speed(value: Float) {
         controller?.setPlaybackSpeed(value)
-        now.bookId?.let { id -> viewModelScope.launch { library.update(id) { it.copy(speed = value) } } }
+        now.bookId?.let { id -> task("Salvataggio velocità…") { library.update(id) { it.copy(speed = value) } } }
         snapshot()
     }
     fun speed(book: Book, value: Float) {
@@ -234,7 +246,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             controller?.setPlaybackSpeed(value)
             snapshot()
         }
-        viewModelScope.launch { library.update(book.id) { it.copy(speed = value) } }
+        task("Salvataggio velocità…") { library.update(book.id) { it.copy(speed = value) } }
+    }
+    fun timerForBook(minutes: Int) {
+        val id = selectedId ?: return
+        if (now.bookId == id) timer(minutes) else {
+            pendingTimer = if (minutes == 0) null else id to minutes
+            message = "Il timer partirà quando avvii questo libro."
+        }
     }
     fun timer(minutes: Int) { controller?.sendCustomCommand(SessionCommand(PlaybackSignals.TIMER_COMMAND, Bundle.EMPTY), Bundle().apply { putInt("minutes", minutes) }) }
     fun addBookmark(note: String) { now.bookId?.let { id -> task("Salvataggio…") {
@@ -262,6 +281,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             prefs.edit().remove("smartPauseBook").remove("smartPauseAt").apply()
         }
         refreshStats()
+        undoReset = book
         message = "Libro segnato come non iniziato."
     }
     fun removeBook(book: Book, copiesOnly: Boolean) = task("Rimozione…") {
@@ -300,11 +320,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         timerShakeExtend = backup.preferences.timerShakeExtend
         libraryViewMode = backup.preferences.libraryViewMode
         refreshStats(); pendingBackup = null; screen = "library"
-        message = "Libreria ripristinata. Ricollega i file dalla scheda di ciascun libro."
+        message = "Libreria ripristinata. Le copie locali disponibili sono state recuperate; ricollega gli eventuali audio mancanti."
     }
     private suspend fun refreshRelease() {
         val info = updater.check()
         updateChecked = true
+        if (release != info) { updateFile?.delete(); updateFile = null }
         release = info.takeIf { it.versionCode > BuildConfig.VERSION_CODE }
         if (release == null) updateFile = null
     }
@@ -326,7 +347,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 stopCurrent()
                 onIntent(updater.install(file))
             } catch (e: CancellationException) { throw e }
-            catch (e: Exception) { message = e.message ?: "Aggiornamento non riuscito." }
+            catch (e: Exception) { updateFile?.delete(); updateFile = null; message = e.message ?: "Aggiornamento non riuscito. Riprova il download." }
             finally { updateInProgress = false }
         }
     }

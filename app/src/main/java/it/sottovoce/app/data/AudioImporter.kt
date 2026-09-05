@@ -83,21 +83,28 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
             } finally { retriever.release() }
             val isMp4 = name.substringAfterLast('.').lowercase() in setOf("m4b", "m4a", "mp4")
             val chapters = if (isMp4) readChapters(uri).getOrDefault(emptyList()) else emptyList()
-            AudioTrack(uri = uri.toString(), name = name, durationMs = duration.coerceAtLeast(0), size = size,
-                chapters = chapters, chapterParserVersion = if (isMp4) 2 else 0)
+            AudioTrack(uri = uri.toString(), name = name.take(1000), durationMs = duration.coerceAtLeast(0), size = size,
+                chapters = chapters.map { it.copy(title = it.title.take(1000)) }, chapterParserVersion = if (isMp4) 2 else 0)
         }.sortedWith { a, b -> NaturalOrder.compare(a.name, b.name) }
-        return Book(title = album.ifBlank { folderName ?: tracks.first().name.substringBeforeLast('.') }, author = author, narrator = narrator, tracks = tracks)
+        return Book(title = album.ifBlank { folderName ?: tracks.first().name.substringBeforeLast('.') }.take(1000), author = author.take(1000), narrator = narrator.take(1000), tracks = tracks)
     }
 
-    suspend fun commit(candidates: List<Book>, copy: Boolean, relinkId: String? = null): Int = withContext(Dispatchers.IO) {
+    suspend fun commit(candidates: List<Book>, copy: Boolean, relinkId: String? = null, onProgress: (String) -> Unit = {}): Int = withContext(Dispatchers.IO) {
         require(candidates.isNotEmpty())
         candidates.forEach { require(it.title.isNotBlank()) { "Inserisci un titolo." } }
+        validateBackup(Backup(books = candidates, bookmarks = emptyList()))
+        require(relinkId != null || library.books.value.size + candidates.size <= 2000) { "La libreria può contenere al massimo 2000 libri." }
         if (relinkId != null) {
             require(candidates.size == 1) { "Per ricollegare scegli un solo libro." }
             val old = requireNotNull(library.books.value.find { it.id == relinkId })
             val replacement = candidates.single()
             require(old.tracks.size == replacement.tracks.size) { "Servono ${old.tracks.size} file, nello stesso ordine della registrazione originale." }
-            library.update(old.id) { it.copy(tracks = replacement.tracks, needsRelink = false) }
+            require(old.tracks.zip(replacement.tracks).all { (a, b) ->
+                a.name.equals(b.name, ignoreCase = true) &&
+                    (a.durationMs <= 0 || b.durationMs > 0 && kotlin.math.abs(a.durationMs - b.durationMs) <= 2000)
+            }) { "Gli audio non corrispondono: controlla nomi, durata e ordine nella schermata di riordino. Per audio differenti importa un nuovo libro." }
+            val cover = saveCover(Uri.parse(replacement.tracks.first().uri), library.ownedDirectory(old.id).apply { mkdirs() })
+            library.update(old.id) { it.copy(tracks = replacement.tracks.mapIndexed { i, t -> t.copy(id = old.tracks[i].id) }, coverPath = cover ?: it.coverPath, needsRelink = false) }
             return@withContext 1
         }
         val existing = library.books.value.flatMap { it.tracks }.map { it.uri }.toSet()
@@ -113,6 +120,7 @@ class AudioImporter(private val context: Context, private val library: LibraryRe
                 val directory = library.ownedDirectory(book.id).apply { mkdirs() }; created += directory
                 val tracks = if (!copy) book.tracks else book.tracks.map { track ->
                     currentCoroutineContext().ensureActive()
+                    onProgress("Copia: ${track.name}")
                     val extension = track.name.substringAfterLast('.').lowercase().takeIf { it in extensions } ?: "audio"
                     val target = File(directory, "${track.id}.$extension")
                     val partial = File(directory, "${track.id}.part")

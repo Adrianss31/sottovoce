@@ -79,14 +79,15 @@ fun AudioTrack.usesSingleSourcePlayback(): Boolean =
     chapters.size > 1 && size >= SINGLE_SOURCE_PLAYBACK_THRESHOLD
 
 fun AudioTrack.playbackItemCount(): Int =
-    if (usesSingleSourcePlayback()) 1 else chapters.size.coerceAtLeast(1)
+    if (usesSingleSourcePlayback()) 1 else normalizedChapters().size
 
 fun Book.playbackItemCount(): Int = tracks.sumOf { it.playbackItemCount() }
 
 fun Book.playbackSegments(): List<PlaybackSegment> {
     val timeline = chapterTimeline()
+    val byTrack = timeline.groupBy { it.trackIndex }
     return tracks.flatMapIndexed { trackIndex, track ->
-        val chapters = timeline.filter { it.trackIndex == trackIndex }
+        val chapters = byTrack[trackIndex].orEmpty()
         if (track.usesSingleSourcePlayback()) {
             listOf(PlaybackSegment(trackIndex, title, 0, track.durationMs,
                 chapters.firstOrNull()?.ordinal ?: 1, timeline.size.coerceAtLeast(1), clipped = false))
@@ -97,9 +98,27 @@ fun Book.playbackSegments(): List<PlaybackSegment> {
     }
 }
 
+fun AudioTrack.normalizedChapters(): List<Chapter> {
+    val points = chapters.filter { it.startMs >= 0 && (durationMs <= 0 || it.startMs < durationMs) }
+        .sortedBy { it.startMs }.distinctBy { it.startMs }
+    return if (points.firstOrNull()?.startMs == 0L) points else listOf(Chapter(if (points.isEmpty()) name else "Introduzione", 0)) + points
+}
+
+fun Book.positionAfterSkip(index: Int, position: Long, deltaMs: Long): Pair<Int, Long> {
+    if (tracks.isEmpty()) return 0 to 0L
+    var remaining = (tracks.take(index).sumOf { it.durationMs } + position + deltaMs).coerceIn(0, durationMs)
+    tracks.forEachIndexed { i, track ->
+        if (remaining < track.durationMs || i == tracks.lastIndex) return i to remaining
+        remaining -= track.durationMs
+    }
+    return 0 to 0L
+}
+
+fun listeningTime(milliseconds: Long, speed: Float): Long = (milliseconds.coerceAtLeast(0) / speed.coerceIn(.5f, 3f)).toLong()
+
 fun Book.chapterTimeline(): List<BookChapter> {
     val partial = tracks.flatMapIndexed { trackIndex, track ->
-        val points = track.chapters.sortedBy { it.startMs }.ifEmpty { listOf(Chapter(track.name, 0)) }
+        val points = track.normalizedChapters()
         points.mapIndexed { index, chapter ->
             val end = points.getOrNull(index + 1)?.startMs ?: track.durationMs
             BookChapter(0, 0, trackIndex, chapter.title.ifBlank { "Capitolo" },
@@ -116,12 +135,11 @@ fun Book.currentChapter(index: Int = trackIndex, position: Long = positionMs): B
 }
 
 fun Book.chapterStatus(chapter: BookChapter): ChapterStatus {
-    val current = currentChapter()
     return when {
-        completed -> ChapterStatus.COMPLETED
-        current == null || chapter.ordinal > current.ordinal -> ChapterStatus.UPCOMING
-        chapter.ordinal == current.ordinal -> ChapterStatus.CURRENT
-        else -> ChapterStatus.COMPLETED
+        completed || chapter.trackIndex < trackIndex -> ChapterStatus.COMPLETED
+        chapter.trackIndex > trackIndex || chapter.startMs > positionMs -> ChapterStatus.UPCOMING
+        chapter.endMs > chapter.startMs && positionMs >= chapter.endMs -> ChapterStatus.COMPLETED
+        else -> ChapterStatus.CURRENT
     }
 }
 
@@ -156,14 +174,15 @@ fun Book.chapterPlaybackStart(index: Int = trackIndex, position: Long = position
 )
 
 @Serializable data class Backup(
-    val format: String = "sottovoce", val version: Int = 1,
+    val format: String = "sottovoce", val version: Int = 2,
     val createdAt: Long = System.currentTimeMillis(),
     val books: List<Book>, val bookmarks: List<Bookmark>,
     val preferences: Preferences = Preferences(),
+    val sessions: List<ListeningDay> = emptyList(),
 )
 
 fun validateBackup(backup: Backup): Backup {
-    require(backup.format == "sottovoce" && backup.version == 1) { "Formato di backup non supportato." }
+    require(backup.format == "sottovoce" && backup.version in 1..2) { "Formato di backup non supportato." }
     require(backup.books.size <= 2000 && backup.bookmarks.size <= 50_000) { "Backup troppo grande." }
     require(backup.preferences.theme in setOf("system", "light", "dark"))
     require(backup.preferences.skipBack in 5..120 && backup.preferences.skipForward in 5..120)
@@ -193,9 +212,12 @@ fun validateBackup(backup: Backup): Backup {
         val book = requireNotNull(byId[m.bookId]) { "Segnalibro senza libro." }
         require(m.trackIndex in book.tracks.indices && m.positionMs >= 0)
     }
+    require(backup.sessions.size <= 1_000_000) { "Troppi giorni di ascolto." }
+    require(backup.sessions.map { it.bookId to it.day }.distinct().size == backup.sessions.size)
+    backup.sessions.forEach { require(it.bookId in byId && it.durationMs in 0..86_400_000L && it.day in 0..365_000L) }
     // Backups carry listening data, never authority to read arbitrary local paths.
     return backup.copy(books = backup.books.map { b ->
-        b.copy(coverPath = null, needsRelink = true, tracks = b.tracks.map { it.copy(uri = "", owned = false) })
+        b.copy(coverPath = null, needsRelink = true, positionMs = b.positionMs.coerceAtMost(b.tracks[b.trackIndex].durationMs.takeIf { it > 0 } ?: Long.MAX_VALUE), tracks = b.tracks.map { it.copy(uri = "", owned = false, chapters = it.normalizedChapters()) })
     })
 }
 
@@ -223,7 +245,7 @@ fun timeLabel(milliseconds: Long): String {
 }
 
 /** Una riga di ascolto registrata per libro e giorno (epoch day). Le statistiche restano locali. */
-data class ListeningDay(val bookId: String, val day: Long, val durationMs: Long)
+@Serializable data class ListeningDay(val bookId: String, val day: Long, val durationMs: Long)
 
 data class MonthStat(val key: String, val label: String, val durationMs: Long)
 

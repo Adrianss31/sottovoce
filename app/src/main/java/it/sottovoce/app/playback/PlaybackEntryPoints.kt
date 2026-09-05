@@ -48,6 +48,11 @@ private object ExternalPlaybackActions {
                         TIMER -> controller.sendCustomCommand(SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND, Bundle.EMPTY), Bundle.EMPTY)
                     }
                 }
+                if (action == TOGGLE && controller.playWhenReady && !controller.isPlaying) {
+                    kotlinx.coroutines.withTimeoutOrNull(3000) {
+                        while (!controller.isPlaying && controller.playWhenReady && controller.playerError == null) kotlinx.coroutines.delay(50)
+                    }
+                }
                 val playing = controller.isPlaying
                 WidgetUpdater.update(app, playing = playing)
                 finished(playing)
@@ -104,6 +109,13 @@ object WidgetUpdater {
     }
 
     private fun views(context: Context, book: Book?, playing: Boolean): RemoteViews = RemoteViews(context.packageName, R.layout.widget_listening).apply {
+        val theme = context.getSharedPreferences("preferences", Context.MODE_PRIVATE).getString("theme", "system")
+        val dark = theme == "dark" || theme == "system" && (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val foreground = android.graphics.Color.parseColor(if (dark) "#F3EFE5" else "#17231C")
+        setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.parseColor(if (dark) "#292E29" else "#E7EDE2"))
+        setTextColor(R.id.widget_title, foreground)
+        setTextColor(R.id.widget_chapter, foreground)
+        listOf(R.id.widget_back, R.id.widget_play, R.id.widget_timer).forEach { setInt(it, "setColorFilter", foreground) }
         val chapter = book?.currentChapter()
         setTextViewText(R.id.widget_title, book?.title ?: "Sottovoce")
         setTextViewText(R.id.widget_chapter, chapter?.title ?: if (book == null) "Apri la libreria" else "Pronto per l'ascolto")

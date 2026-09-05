@@ -311,22 +311,26 @@ class AppSmokeTest {
             }
         } finally {resolver.delete(source,null,null)}
     }
-    @Test fun backupRoundTripPreservesDataButRequiresExplicitRelinking() {
+    @Test fun backupRoundTripPreservesStatisticsAndRecoversLocalCopies() {
         val book=seed()
         runBlocking {
             app.library.savePosition(book.id,0,5000,1.25f)
             app.library.bookmark(Bookmark(bookId=book.id,trackIndex=0,positionMs=4000,note="Nota locale"))
             context.getSharedPreferences("preferences",0).edit().putString("theme","dark").putInt("skipBack",30).commit()
+            app.library.recordListening(book.id, 60_000)
             val backup=app.library.exportBackup()
+            assertEquals(60_000L, backup.sessions.sumOf { it.durationMs })
             assertEquals("dark",backup.preferences.theme)
             context.getSharedPreferences("preferences",0).edit().putString("theme","light").commit()
             app.library.restore(backup)
             assertEquals("dark",context.getSharedPreferences("preferences",0).getString("theme",null))
             assertEquals(30,context.getSharedPreferences("preferences",0).getInt("skipBack",0))
             val restored=app.library.books.value.single()
-            assertTrue(restored.needsRelink)
+            assertFalse(restored.needsRelink)
             assertEquals(5000L,restored.positionMs)
-            assertEquals("",restored.tracks.single().uri)
+            assertEquals(book.tracks.single().uri,restored.tracks.single().uri)
+            assertEquals(60_000L, app.library.listeningDays().sumOf { it.durationMs })
+            assertTrue(app.library.hasRecovery())
             assertEquals("Nota locale",app.library.bookmarks.value.single().note)
             assertTrue(File(Uri.parse(book.tracks.single().uri).path!!).exists())
         }

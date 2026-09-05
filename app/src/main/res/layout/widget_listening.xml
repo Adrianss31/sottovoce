@@ -62,8 +62,8 @@
 
             <ImageButton
                 android:id="@+id/widget_back"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:background="@android:color/transparent"
                 android:contentDescription="@string/widget_back"
                 android:src="@android:drawable/ic_media_rew" />
@@ -78,8 +78,8 @@
 
             <ImageButton
                 android:id="@+id/widget_timer"
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
                 android:background="@android:color/transparent"
                 android:contentDescription="@string/widget_timer"
                 android:src="@drawable/ic_timer_notification" />
