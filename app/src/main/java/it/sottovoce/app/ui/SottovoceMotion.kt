@@ -253,37 +253,8 @@ internal fun AnimatedPlayPauseIcon(
     )
 }
 
-private fun stateIconTransform(policy: MotionPolicy): ContentTransform {
-    if (!policy.animationsEnabled) {
-        return EnterTransition.None togetherWith ExitTransition.None
-    }
-
-    val enter = fadeIn(
-        animationSpec = tween(
-            durationMillis = policy.durationMillis(SottovoceMotionTokens.DurationShort),
-            easing = SottovoceMotionTokens.StandardEasing,
-        ),
-    ) + scaleIn(
-        initialScale = SottovoceMotionTokens.IconIncomingScale,
-        animationSpec = tween(
-            durationMillis = policy.durationMillis(SottovoceMotionTokens.DurationShort),
-            easing = SottovoceMotionTokens.StandardEasing,
-        ),
-    )
-    val exit = fadeOut(
-        animationSpec = tween(
-            durationMillis = policy.durationMillis(SottovoceMotionTokens.DurationQuick),
-            easing = SottovoceMotionTokens.AccelerateEasing,
-        ),
-    ) + scaleOut(
-        targetScale = SottovoceMotionTokens.IconOutgoingScale,
-        animationSpec = tween(
-            durationMillis = policy.durationMillis(SottovoceMotionTokens.DurationQuick),
-            easing = SottovoceMotionTokens.AccelerateEasing,
-        ),
-    )
-    return enter togetherWith exit
-}
+private fun stateIconTransform(policy: MotionPolicy): ContentTransform =
+    EnterTransition.None togetherWith ExitTransition.None
 
 /** The cover leads; controls settle beneath it without changing the list's layout. */
 @Composable

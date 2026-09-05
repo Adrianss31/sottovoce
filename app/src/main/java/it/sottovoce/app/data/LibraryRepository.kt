@@ -149,6 +149,29 @@ class LibraryRepository(private val context: Context) {
         validateBackup(AppJson.decodeFromString<Backup>(File(context.filesDir, "before-restore.json").readText()))
     }
     fun hasRecovery(): Boolean = File(context.filesDir, "before-restore.json").isFile
+    suspend fun removeUnusedCopies(): Int = withContext(Dispatchers.IO) { mutex.withLock {
+        val recovery = File(context.filesDir, "before-restore.json").takeIf { it.isFile }?.let {
+            AppJson.decodeFromString<Backup>(it.readText())
+        }
+        val protected = (_books.value + recovery?.books.orEmpty()).flatMap { book ->
+            book.tracks.map { track -> book.id to track.id }
+        }.toSet()
+        val paths = (_books.value + recovery?.books.orEmpty()).flatMap { book ->
+            book.tracks.mapNotNull { track ->
+                if (track.owned && isSafeAudioUri(track.uri)) Uri.parse(track.uri).path else null
+            } + listOfNotNull(book.coverPath)
+        }.map { File(it).canonicalPath }.toSet()
+        var count = 0
+        File(context.filesDir, "books").listFiles()?.forEach { directory ->
+            directory.listFiles()?.filter { it.isFile }?.forEach { file ->
+                val key = directory.name to file.name.substringBeforeLast('.')
+                if (file.canonicalPath !in paths && key !in protected && file.name != "cover.jpg") {
+                    if (file.delete()) count++
+                }
+            }
+        }
+        count
+    } }
     suspend fun cleanIncompleteCopies(): Int = withContext(Dispatchers.IO) { mutex.withLock {
         // Only incomplete imports are disposable; complete audio may be needed by recovery.
         var count = 0

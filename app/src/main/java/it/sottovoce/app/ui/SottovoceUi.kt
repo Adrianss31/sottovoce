@@ -480,7 +480,7 @@ private val SottovoceTypography = Typography(
                     }
                 }
                 if (singleEntries.isNotEmpty()) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { LibrarySectionTitle(if (seriesEntries.isEmpty()) "Libri" else "Altri libri", null) }
+                    if (seriesEntries.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) { LibrarySectionTitle("Altri libri", null) }
                     singleEntries.forEach { entry ->
                         val b = entry.book
                         item(key = b.id, span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) {
@@ -1247,6 +1247,11 @@ private fun Long?.orZero(): Long = this ?: 0L
 @UnstableApi
 @Composable private fun SettingsScreen(vm:LibraryViewModel, sharedKey: String?, onTheme:()->Unit,onSkips:()->Unit,onNightDuration:()->Unit,onBackup:()->Unit,onRestore:()->Unit,onInstall:()->Unit) {
     val context=LocalContext.current
+    var cleanUnused by rememberSaveable { mutableStateOf(false) }
+    if (cleanUnused) AlertDialog(onDismissRequest = { cleanUnused = false }, title = { Text("Eliminare le copie inutilizzate?") },
+        text = { Text("Elimina soltanto i file privati non associati alla libreria attuale o alla copia di recupero. Gli originali restano intatti.") },
+        confirmButton = { TextButton(onClick = { cleanUnused = false; vm.removeUnusedCopies() }) { Text("Elimina") } },
+        dismissButton = { TextButton(onClick = { cleanUnused = false }) { Text("Annulla") } })
     val storage by produceState(0L) {value=withContext(Dispatchers.IO){File(context.filesDir,"books").walkTopDown().filter{it.isFile}.sumOf{it.length()}}}
     LazyColumn(Modifier.fillMaxSize(),
         contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
@@ -1294,6 +1299,7 @@ private fun Long?.orZero(): Long = this ?: 0L
         }}
         item {Text("Backup locale",style=MaterialTheme.typography.titleLarge);Text("Salva libreria, progressi, segnalibri e preferenze. Gli audio vanno conservati separatamente.",style=MaterialTheme.typography.bodyMedium)}
         if (vm.library.hasRecovery()) item { OutlinedButton(onClick = vm::recoverBackup, modifier = Modifier.fillMaxWidth()) { Text("Recupera la libreria precedente") } }
+        item { TextButton(onClick = { cleanUnused = true }) { Text("Elimina copie non più associate") } }
         item { TextButton(onClick = vm::cleanIncompleteCopies) { Text("Elimina copie incomplete") } }
         item {Row(horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedButton(onClick=onBackup,modifier=Modifier.weight(1f)){Text("Esporta")};OutlinedButton(onClick=onRestore,modifier=Modifier.weight(1f)){Text("Ripristina")}}}
         item {Text("Spazio gestito: ${storage/1024/1024} MB",style=MaterialTheme.typography.titleMedium);Text("Copie audio e copertine. Per eliminare una copia apri la scheda del libro: gli originali restano intatti.",style=MaterialTheme.typography.bodySmall)}

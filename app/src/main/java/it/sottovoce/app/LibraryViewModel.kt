@@ -91,6 +91,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         } }
     }
     fun recoverBackup() = task("Lettura copia di sicurezza…") { pendingBackup = library.recoveryBackup() }
+    fun removeUnusedCopies() = task("Pulizia copie inutilizzate…") {
+        message = "${library.removeUnusedCopies()} file inutilizzati eliminati."
+    }
     fun cleanIncompleteCopies() = task("Pulizia copie incomplete…") {
         message = "${library.cleanIncompleteCopies()} copie incomplete eliminate."
     }
