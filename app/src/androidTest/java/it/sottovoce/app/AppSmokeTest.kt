@@ -54,7 +54,7 @@ class AppSmokeTest {
         return buffer.array()
     }
     private fun seed():Book {
-        val book=Book(title="Audiolibro di prova",author="Test automatico",tracks=emptyList())
+        val book=Book(title="Audiolibro di prova",author="Test automatico",tracks=listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink=true)
         val dir=app.library.ownedDirectory(book.id).apply{mkdirs()}
         val file=File(dir,"capitolo.wav").apply{writeBytes(wav())}
         val cover = File(dir, "cover.jpg")
@@ -80,7 +80,7 @@ class AppSmokeTest {
     }
     @Test fun listeningPanelPinsOnlyDuringPlaybackAndExpandsAtTop() {
         val book = seed()
-        val others = (1..12).map { Book(title = "Scaffale $it", tracks = emptyList(), createdAt = it.toLong()) }
+        val others = (1..12).map { Book(title = "Scaffale $it", tracks = listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink = true, createdAt = it.toLong()) }
         runBlocking { app.library.add(others) }
         compose.runOnIdle { vm.playBook(book) }
         compose.waitUntil(10_000) { vm.now.playing }
@@ -193,9 +193,9 @@ class AppSmokeTest {
         screenshot("03-series")
     }
     @Test fun backFromScrolledBookReturnsToItsLibraryPosition() {
-        val target = Book(title="Libro in fondo", tracks=emptyList(), createdAt=1)
+        val target = Book(title="Libro in fondo", tracks=listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink=true, createdAt=1)
         val newer = (1..14).map { index ->
-            Book(title="Libro recente ${index.toString().padStart(2, '0')}", tracks=emptyList(), createdAt=100L + index)
+            Book(title="Libro recente ${index.toString().padStart(2, '0')}", tracks=listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink=true, createdAt=100L + index)
         }
         runBlocking { app.library.add(newer + target) }
         compose.waitUntil(10_000) { app.library.books.value.size == newer.size + 1 }

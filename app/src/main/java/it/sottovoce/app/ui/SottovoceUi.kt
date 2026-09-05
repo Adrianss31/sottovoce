@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.listSaver
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -1170,6 +1171,9 @@ private fun Long?.orZero(): Long = this ?: 0L
 
 @Composable private fun CompactChapterRow(book: Book, chapter: BookChapter, enabled: Boolean, onPlay: () -> Unit) {
     var fullTitle by rememberSaveable(book.id, chapter.ordinal) { mutableStateOf(false) }
+    if (fullTitle) AlertDialog(onDismissRequest = { fullTitle = false }, title = { Text("Capitolo ${chapter.ordinal}") },
+        text = { Text(chapter.title) }, confirmButton = { TextButton(onClick = { fullTitle = false; onPlay() }, enabled = enabled) { Text("Riproduci") } },
+        dismissButton = { TextButton(onClick = { fullTitle = false }) { Text("Chiudi") } })
     val status = book.chapterStatus(chapter)
     val current = status == ChapterStatus.CURRENT
     val foreground = when (status) {
@@ -1186,7 +1190,7 @@ private fun Long?.orZero(): Long = this ?: 0L
     val progress by animateFloatAsState(targetProgress, tween(SottovoceMotionTokens.DurationProgress, easing = LinearEasing), label = "progresso riga capitolo")
     Surface(
         modifier = Modifier.fillMaxWidth().fillMaxHeight()
-            .motionClickable(enabled = enabled, onClickLabel = "Riproduci ${chapter.title}", onClick = onPlay),
+            .combinedClickable(enabled = enabled, onClickLabel = "Riproduci ${chapter.title}", onLongClickLabel = "Mostra titolo completo", onLongClick = { fullTitle = true }, onClick = onPlay),
         color = container, shape = RoundedCornerShape(10.dp),
     ) {
         Column {
@@ -1199,7 +1203,7 @@ private fun Long?.orZero(): Long = this ?: 0L
                     Spacer(Modifier.weight(1f))
                     Text(timeLabel(chapter.durationMs), style = MaterialTheme.typography.labelSmall, color = foreground)
                 }
-                Text(chapter.title, modifier = Modifier.clickable { fullTitle = !fullTitle }, maxLines = if (fullTitle) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis,
+                Text(chapter.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodySmall, fontWeight = if (current) FontWeight.SemiBold else FontWeight.Normal)
                 if (current) Text("${timeLabel(chapter.elapsedMs(book.positionMs))} · −${timeLabel(listeningTime(chapter.remainingMs(book.positionMs), book.speed))}",
                     style = MaterialTheme.typography.labelSmall, color = foreground, maxLines = 1, overflow = TextOverflow.Ellipsis)
