@@ -25,6 +25,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -881,6 +882,10 @@ private fun shortDuration(ms: Long): String {
     sharedCoverKey: String?,
     onPlay: (Int?,Long?) -> Unit, onEdit: () -> Unit, onSpeed: () -> Unit, onTimer: () -> Unit, onBookmark: () -> Unit,
     onRelink: () -> Unit, onComplete: () -> Unit, onRemove: () -> Unit, onRemoveCopies: () -> Unit, onDeleteMark: (String) -> Unit) {
+    val detailState = rememberLazyListState()
+    val compactHeader by remember { derivedStateOf { detailState.firstVisibleItemIndex > 0 } }
+    val headerCoverWidth by animateDpAsState(if (compactHeader) 40.dp else 100.dp,
+        tween(LocalMotionPolicy.current.durationMillis(220)), label = "copertina intestazione")
     val now = vm.now
     val playing = active && now.playing
     val shownTrack = if (active) now.trackIndex else book.trackIndex
@@ -901,13 +906,13 @@ private fun shortDuration(ms: Long): String {
     var section by rememberSaveable(book.id) { mutableStateOf("chapters") }
     val sliderScale by animateFloatAsState(if (dragging != null) 1.035f else 1f,
         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium), label = "presa cursore")
-    LazyColumn(Modifier.fillMaxSize().testTag("book_detail"),
+    LazyColumn(Modifier.fillMaxSize().testTag("book_detail"), state = detailState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         stickyHeader { Surface(color = MaterialTheme.colorScheme.background) {
-            Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Cover(book, Modifier.width(100.dp).sottovoceSharedElement(sharedCoverKey))
+            Row(Modifier.padding(if (compactHeader) 8.dp else 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Cover(book, Modifier.width(headerCoverWidth).sottovoceSharedElement(sharedCoverKey))
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Box(Modifier.fillMaxWidth().height(18.dp), contentAlignment = Alignment.CenterStart) {
+                    if (!compactHeader) Box(Modifier.fillMaxWidth().height(18.dp), contentAlignment = Alignment.CenterStart) {
                         AnimatedContent(active, transitionSpec = {
                             (fadeIn(tween(180)) + scaleIn(tween(180), .92f)) togetherWith
                                 (fadeOut(tween(120)) + scaleOut(tween(120), .96f))
@@ -924,12 +929,12 @@ private fun shortDuration(ms: Long): String {
                             } else Spacer(Modifier.fillMaxSize())
                         }
                     }
-                    Text(book.title, style = MaterialTheme.typography.headlineSmall, maxLines = 4, overflow = TextOverflow.Ellipsis)
-                    if (book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.titleSmall)
-                    if (book.series.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text(book.title, style = if (compactHeader) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall, maxLines = if (compactHeader) 2 else 4, overflow = TextOverflow.Ellipsis)
+                    if (!compactHeader && book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.titleSmall)
+                    if (!compactHeader && book.series.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(Icons.Default.CollectionsBookmark, "Serie", Modifier.size(16.dp)); Text(seriesLabel(book), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     }
-                    if (book.narrator.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (!compactHeader && book.narrator.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(Icons.Default.Mic, "Narratore", Modifier.size(16.dp)); Text("Letto da ${book.narrator}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1133,7 +1138,7 @@ private fun Long?.orZero(): Long = this ?: 0L
         color = container, shape = RoundedCornerShape(10.dp),
     ) {
         Column {
-            Column(Modifier.fillMaxWidth().heightIn(min = 84.dp).padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(when (status) { ChapterStatus.COMPLETED -> Icons.Default.Check; ChapterStatus.CURRENT -> Icons.Default.GraphicEq; ChapterStatus.UPCOMING -> Icons.Default.PlayArrow },
                         when (status) { ChapterStatus.COMPLETED -> "Capitolo completato"; ChapterStatus.CURRENT -> "Capitolo corrente"; ChapterStatus.UPCOMING -> "Capitolo da ascoltare" },
