@@ -284,3 +284,21 @@ private fun stateIconTransform(policy: MotionPolicy): ContentTransform {
     )
     return enter togetherWith exit
 }
+
+/** The cover leads; listening controls unfold beneath it and fold away on return. */
+@Composable
+internal fun Modifier.bookDetailsReveal(): Modifier {
+    val scope = LocalAnimatedVisibilityScope.current ?: return this
+    val policy = LocalMotionPolicy.current
+    return with(scope) {
+        this@bookDetailsReveal.animateEnterExit(
+            enter = androidx.compose.animation.expandVertically(
+                animationSpec = tween(policy.durationMillis(220), delayMillis = policy.durationMillis(140)),
+                expandFrom = Alignment.Top,
+            ),
+            exit = androidx.compose.animation.shrinkVertically(
+                animationSpec = tween(policy.durationMillis(160)), shrinkTowards = Alignment.Top,
+            ),
+        )
+    }
+}

@@ -230,8 +230,10 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
                     val position = (extras?.getLong("chapterStartMs", 0) ?: 0L) + player.currentPosition
                     val speed = player.playbackParameters.speed
                     player.pause(); player.stop(); player.clearMediaItems(); stopTimer(false)
+                    val pendingSave = positionSaveJob
                     app.scope.launch {
                         try {
+                            pendingSave?.join()
                             if (id != null) app.library.savePosition(id, index, position, speed)
                             future.set(SessionResult(SessionResult.RESULT_SUCCESS))
                         } catch (e: Exception) { future.setException(e) }
@@ -281,6 +283,8 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
             delegate.setLoadErrorHandlingPolicy(policy); return this
         }
     }
+    private var positionSaveJob: kotlinx.coroutines.Job? = null
+
     private fun save(finished: Boolean = false) {
         if (!::player.isInitialized) return
         val extras = player.currentMediaItem?.mediaMetadata?.extras ?: return
@@ -290,7 +294,11 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
         val speed = player.playbackParameters.speed
         WidgetUpdater.update(this, id, index, position, player.isPlaying)
         flushListening()
-        app.scope.launch { app.library.savePosition(id, index, position, speed, finished) }
+        val previousSave = positionSaveJob
+        positionSaveJob = app.scope.launch {
+            previousSave?.join()
+            app.library.savePosition(id, index, position, speed, finished)
+        }
     }
     private fun currentBookId(): String? = player.currentMediaItem?.mediaMetadata?.extras?.getString("bookId")
     private fun rememberPause() {

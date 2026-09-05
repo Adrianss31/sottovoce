@@ -144,7 +144,7 @@ internal fun CrossfadeCoverImage(
     path: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    contentScale: ContentScale = ContentScale.Fit,
+    contentScale: ContentScale = ContentScale.FillBounds,
     placeholder: @Composable BoxScope.() -> Unit,
 ) {
     BoxWithConstraints(modifier) {

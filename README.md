@@ -4,7 +4,7 @@
 
 Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano, nessun account, nessuna pubblicità, ascolto offline.
 
-**Stato del codice:** versione 0.4.5. Scarica l’ultima versione pubblicata dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
+**Stato del codice:** versione 0.5.0. Scarica l’ultima versione pubblicata dalla [pagina delle release](https://github.com/Adrianss31/sottovoce/releases/latest). Risultati delle prove e limiti in [VALIDATION.md](docs/VALIDATION.md).
 
 ## Cosa fa
 
@@ -25,6 +25,14 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 - Include un widget con capitolo e avanzamento e un riquadro dei comandi rapidi Android per play/pausa.
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
+
+## Novità della 0.5.0
+
+- Un solo pannello di ascolto nella home: resta in vista durante la riproduzione, si compatta scorrendo e torna grande all’inizio. In pausa scorre con la libreria; eliminata la barra inferiore.
+- Libreria senza cornici attorno ai libri, con copertine grandi e immagini adattate all’intera superficie, senza bande aggiunte. Anche le serie usano uno scaffale aperto.
+- La copertina viaggia dalla libreria all’intestazione del libro e torna alla sua origine. I comandi si dispiegano sotto di essa; eliminate le transizioni generiche di pagina. L’intestazione resta visibile anche scorrendo i capitoli.
+- Capitoli in due colonne, ordinati da sinistra a destra, con durata, stato e progresso corrente.
+- “Segna come non iniziato” ferma l’audio e azzera posizione e completamento. Segnalibri, velocità e statistiche storiche restano conservati.
 
 ## Novità della 0.4.5
 

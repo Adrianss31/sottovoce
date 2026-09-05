@@ -254,6 +254,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         library.update(book.id) { it.copy(completed = !it.completed) }
         refreshStats()
     }
+    fun markNotStarted(book: Book) = task("Azzeramento ascolto…") {
+        // Await the service's final save before resetting, so a late tick cannot restore progress.
+        if (now.bookId == book.id) stopCurrent()
+        library.update(book.id) { it.copy(trackIndex = 0, positionMs = 0, lastPlayedAt = 0, completed = false) }
+        if (prefs.getString("smartPauseBook", null) == book.id) {
+            prefs.edit().remove("smartPauseBook").remove("smartPauseAt").apply()
+        }
+        refreshStats()
+        message = "Libro segnato come non iniziato."
+    }
     fun removeBook(book: Book, copiesOnly: Boolean) = task("Rimozione…") {
         if (now.bookId == book.id) stopCurrent()
         if (copiesOnly) library.removeCopies(book.id) else library.removeBook(book.id)
