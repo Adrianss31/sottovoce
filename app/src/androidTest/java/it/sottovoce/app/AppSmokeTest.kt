@@ -66,7 +66,7 @@ class AppSmokeTest {
         paint.color = android.graphics.Color.WHITE; paint.textSize = 25f
         canvas.drawText("SOTTOVOCE", 15f, 125f, paint)
         cover.outputStream().use { artwork.compress(Bitmap.CompressFormat.JPEG, 95, it) }; artwork.recycle()
-        val complete=book.copy(coverPath=cover.absolutePath, tracks=listOf(AudioTrack(uri=Uri.fromFile(file).toString(),name="file-audio.wav",durationMs=30_000,size=file.length(),owned=true,
+        val complete=book.copy(needsRelink=false, coverPath=cover.absolutePath, tracks=listOf(AudioTrack(uri=Uri.fromFile(file).toString(),name="file-audio.wav",durationMs=30_000,size=file.length(),owned=true,
             chapters=listOf(Chapter("Capitolo introduttivo",0),Chapter("Seconda parte",15_000)))))
         runBlocking{app.library.add(listOf(complete))}
         compose.waitUntil(10_000){compose.onAllNodesWithText(complete.title).fetchSemanticsNodes().isNotEmpty()}
