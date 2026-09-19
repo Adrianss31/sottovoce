@@ -223,21 +223,25 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
             }
         val activity = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         session = MediaSession.Builder(this, player).setSessionActivity(activity).setMediaButtonPreferences(mediaButtons()).setCallback(object : MediaSession.Callback {
-            override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
-                if (controller.packageName != packageName && !controller.isTrusted) return MediaSession.ConnectionResult.reject()
-                val base = super.onConnect(session, controller)
-                val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                    .setAvailableSessionCommands(base.availableSessionCommands.buildUpon()
+            override fun onConnectAsync(session: MediaSession, controller: MediaSession.ControllerInfo): ListenableFuture<MediaSession.ConnectionResult> {
+                if (controller.packageName != packageName && !controller.isTrusted) {
+                    return Futures.immediateFuture(MediaSession.ConnectionResult.reject())
+                }
+                // onConnect() returns Media3's legacy empty sentinel. The asynchronous callback
+                // starts from the controller-specific defaults required by the notification.
+                val defaults = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller).build()
+                val builder = MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                    .setAvailableSessionCommands(defaults.availableSessionCommands.buildUpon()
                         .add(SessionCommand(PlaybackSignals.TIMER_COMMAND, Bundle.EMPTY))
                         .add(timerCommand)
                         .add(SessionCommand("it.sottovoce.STOP_AND_SAVE", Bundle.EMPTY)).build()).build()
-                if (!session.isMediaNotificationController(controller)) return builder
-                return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
-                    .setAvailableSessionCommands(base.availableSessionCommands.buildUpon().add(timerCommand).build())
-                    .setAvailablePlayerCommands(base.availablePlayerCommands.buildUpon()
+                if (!session.isMediaNotificationController(controller)) return Futures.immediateFuture(builder)
+                return Futures.immediateFuture(MediaSession.ConnectionResult.AcceptedResultBuilder(session, controller)
+                    .setAvailableSessionCommands(defaults.availableSessionCommands.buildUpon().add(timerCommand).build())
+                    .setAvailablePlayerCommands(defaults.availablePlayerCommands.buildUpon()
                         .remove(Player.COMMAND_SEEK_TO_PREVIOUS).remove(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
                         .remove(Player.COMMAND_SEEK_TO_NEXT).remove(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM).build())
-                    .setMediaButtonPreferences(mediaButtons()).build()
+                    .setMediaButtonPreferences(mediaButtons()).build())
             }
             override fun onAddMediaItems(session: MediaSession, controller: MediaSession.ControllerInfo, mediaItems: MutableList<MediaItem>): ListenableFuture<MutableList<MediaItem>> {
                 val requestedBooks = mediaItems.map { it.mediaId.substringBefore('/') }.toSet()

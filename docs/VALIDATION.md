@@ -13,3 +13,7 @@ La suite aggiunge quattro prove strumentali: pannello fissato soltanto durante l
 ## Verifica 0.6.0
 
 18 test unitari: aggiunte regressioni per introduzione precedente al primo marcatore, duplicati e marcatori fuori durata, salti attraverso più tracce, backup delle statistiche e compatibilità versione 1. Il test Android del backup ora controlla statistiche, recupero delle copie private e presenza della copia precedente. Compilazioni debug, release e test Android, oltre a lint. La verifica fisica di Bluetooth, sensore, codec reali e installazione sul telefono resta necessaria.
+
+## Verifica 0.6.1
+
+Due regressioni Android aggiungono il controllo della notifica multimediale in foreground e dei relativi comandi di sistema durante un WAV locale valido. La seconda porta realmente l'app in background aprendo le Impostazioni Android, verifica riproduzione non soppressa e avanzamento dal controller Media3, poi prova pausa e ripresa dai controlli della notifica. Restano necessarie prove fisiche su Bluetooth, cuffie, telefonate, risparmio energetico del produttore, codec reali e versioni Android diverse dall'emulatore.

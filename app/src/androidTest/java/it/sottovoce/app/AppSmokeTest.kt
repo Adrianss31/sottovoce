@@ -5,6 +5,7 @@ import android.app.ActivityManager
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.ContentValues
+import android.content.Intent
 import android.graphics.Bitmap
 import android.media.session.MediaController as PlatformMediaController
 import android.media.session.MediaSession as PlatformMediaSession
@@ -13,6 +14,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.provider.MediaStore
+import android.provider.Settings
 import android.service.notification.StatusBarNotification
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
@@ -144,26 +146,44 @@ class AppSmokeTest {
         waitOnMain { activeMediaNotification() != null }
         val controller = PlatformMediaController(context, requireNotNull(platformToken(requireNotNull(activeMediaNotification()))))
         val media3Controller = requireNotNull(vm.controller)
-        val scenario = compose.activityRule.scenario
+        val activity = compose.activity
 
         try {
-            scenario.moveToState(Lifecycle.State.CREATED)
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                activity.startActivity(Intent(Settings.ACTION_SETTINGS))
+            }
+            waitOnMain { activity.lifecycle.currentState == Lifecycle.State.CREATED }
             waitOnMain {
                 controller.playbackState?.state == PlaybackState.STATE_PLAYING &&
+                    media3Controller.isPlaying &&
                     media3Controller.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
             }
-            val position = requireNotNull(controller.playbackState).position
-            waitOnMain { (controller.playbackState?.position ?: 0L) >= position + 500L }
+            var position = 0L
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { position = media3Controller.currentPosition }
+            waitOnMain { media3Controller.currentPosition >= position + 500L }
 
             controller.transportControls.pause()
-            waitOnMain { controller.playbackState?.state == PlaybackState.STATE_PAUSED }
+            waitOnMain { controller.playbackState?.state == PlaybackState.STATE_PAUSED && !media3Controller.isPlaying }
             controller.transportControls.play()
-            waitOnMain { controller.playbackState?.state == PlaybackState.STATE_PLAYING }
-            val resumedAt = requireNotNull(controller.playbackState).position
-            waitOnMain { (controller.playbackState?.position ?: 0L) >= resumedAt + 500L }
+            waitOnMain {
+                controller.playbackState?.state == PlaybackState.STATE_PLAYING &&
+                    media3Controller.isPlaying &&
+                    media3Controller.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
+            }
+            var resumedAt = 0L
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { resumedAt = media3Controller.currentPosition }
+            waitOnMain { media3Controller.currentPosition >= resumedAt + 500L }
         } finally {
-            scenario.moveToState(Lifecycle.State.RESUMED)
-            stopAndSave()
+            try {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                    activity.startActivity(Intent(activity, MainActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    })
+                }
+                waitOnMain { activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) }
+            } finally {
+                stopAndSave()
+            }
         }
     }
     @Test fun listeningPanelPinsOnlyDuringPlaybackAndExpandsAtTop() {
