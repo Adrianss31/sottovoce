@@ -1,15 +1,25 @@
 package it.sottovoce.app
 
 import android.Manifest
+import android.app.ActivityManager
+import android.app.Notification
+import android.app.NotificationManager
 import android.content.ContentValues
 import android.graphics.Bitmap
+import android.media.session.MediaController as PlatformMediaController
+import android.media.session.MediaSession as PlatformMediaSession
+import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Bundle
+import android.os.SystemClock
 import android.provider.MediaStore
+import android.service.notification.StatusBarNotification
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.SessionCommand
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -17,6 +27,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import it.sottovoce.app.data.*
 import it.sottovoce.app.playback.PlaybackSignals
+import it.sottovoce.app.playback.PlaybackService
 import kotlinx.coroutines.runBlocking
 import org.junit.*
 import org.junit.Assert.*
@@ -77,6 +88,83 @@ class AppSmokeTest {
         val output=InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
         val dir=(output?.let{File(it)}?:requireNotNull(context.getExternalFilesDir("screenshots"))).apply{mkdirs()}
         File(dir,"$name.png").outputStream().use{image.compress(Bitmap.CompressFormat.PNG,100,it)}
+    }
+    private fun waitOnMain(timeoutMs: Long = 10_000, condition: () -> Boolean) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val deadline = SystemClock.elapsedRealtime() + timeoutMs
+        var matched = false
+        while (!matched && SystemClock.elapsedRealtime() < deadline) {
+            instrumentation.runOnMainSync { matched = condition() }
+            if (!matched) SystemClock.sleep(100)
+        }
+        assertTrue("Condition not met within ${timeoutMs}ms", matched)
+    }
+    private fun activeMediaNotification(): StatusBarNotification? =
+        context.getSystemService(NotificationManager::class.java).activeNotifications.firstOrNull { status ->
+            status.packageName == context.packageName && platformToken(status) != null
+        }
+    @Suppress("DEPRECATION")
+    private fun platformToken(status: StatusBarNotification): PlatformMediaSession.Token? =
+        status.notification.extras.getParcelable(Notification.EXTRA_MEDIA_SESSION) as? PlatformMediaSession.Token
+    private fun stopAndSave() {
+        var future: com.google.common.util.concurrent.ListenableFuture<androidx.media3.session.SessionResult>? = null
+        compose.runOnIdle {
+            future = vm.controller?.sendCustomCommand(
+                SessionCommand("it.sottovoce.STOP_AND_SAVE", Bundle.EMPTY),
+                Bundle.EMPTY,
+            )
+        }
+        future?.get(10, TimeUnit.SECONDS)
+    }
+    @Suppress("DEPRECATION")
+    @Test fun playingServicePublishesForegroundMediaNotificationWithSystemControls() {
+        val book = seed()
+        compose.runOnIdle { vm.playBook(book) }
+        compose.waitUntil(10_000) { vm.now.playing }
+
+        waitOnMain { activeMediaNotification() != null }
+        val status = requireNotNull(activeMediaNotification())
+        val token = requireNotNull(platformToken(status))
+        val controller = PlatformMediaController(context, token)
+        val actions = requireNotNull(controller.playbackState).actions
+
+        assertTrue(status.notification.flags and Notification.FLAG_FOREGROUND_SERVICE != 0)
+        assertTrue(status.notification.actions.orEmpty().isNotEmpty())
+        assertTrue(actions and PlaybackState.ACTION_PAUSE != 0L)
+        assertTrue(actions and PlaybackState.ACTION_SEEK_TO != 0L)
+        assertTrue(actions and PlaybackState.ACTION_REWIND != 0L)
+        val running = context.getSystemService(ActivityManager::class.java).getRunningServices(Int.MAX_VALUE)
+            .firstOrNull { it.service.className == PlaybackService::class.java.name }
+        assertTrue("PlaybackService is not running in the foreground", running?.foreground == true)
+    }
+    @Test fun playbackContinuesAndSystemControlsWorkWhileActivityIsStopped() {
+        val book = seed()
+        compose.runOnIdle { vm.playBook(book) }
+        compose.waitUntil(10_000) { vm.now.playing }
+        waitOnMain { activeMediaNotification() != null }
+        val controller = PlatformMediaController(context, requireNotNull(platformToken(requireNotNull(activeMediaNotification()))))
+        val media3Controller = requireNotNull(vm.controller)
+        val scenario = compose.activityRule.scenario
+
+        try {
+            scenario.moveToState(Lifecycle.State.CREATED)
+            waitOnMain {
+                controller.playbackState?.state == PlaybackState.STATE_PLAYING &&
+                    media3Controller.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE
+            }
+            val position = requireNotNull(controller.playbackState).position
+            waitOnMain { (controller.playbackState?.position ?: 0L) >= position + 500L }
+
+            controller.transportControls.pause()
+            waitOnMain { controller.playbackState?.state == PlaybackState.STATE_PAUSED }
+            controller.transportControls.play()
+            waitOnMain { controller.playbackState?.state == PlaybackState.STATE_PLAYING }
+            val resumedAt = requireNotNull(controller.playbackState).position
+            waitOnMain { (controller.playbackState?.position ?: 0L) >= resumedAt + 500L }
+        } finally {
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            stopAndSave()
+        }
     }
     @Test fun listeningPanelPinsOnlyDuringPlaybackAndExpandsAtTop() {
         val book = seed()
