@@ -204,6 +204,46 @@ class AppSmokeTest {
         compose.onNodeWithTag("library").performScrollToIndex(8)
         compose.onNodeWithTag("listening_expanded").assertIsNotDisplayed()
     }
+    @Test fun homeStartsWithShelfInsteadOfRedundantLibraryHeading() {
+        seed()
+        compose.onNodeWithText("Scaffale").assertIsDisplayed()
+        compose.onNodeWithText("La tua libreria").assertDoesNotExist()
+        compose.onNodeWithText("1 audiolibro · 0 in ascolto").assertDoesNotExist()
+    }
+    @Test fun shelfBooksDoNotAnimateWhenPlaybackPinsOrUnpinsThePanel() {
+        val book = seed()
+        compose.runOnIdle { vm.playBook(book) }
+        compose.waitUntil(10_000) { vm.now.playing }
+        compose.runOnIdle { vm.togglePlay() }
+        compose.waitUntil(5_000) { !vm.now.playing }
+        compose.waitForIdle()
+
+        fun bookOffset(): Float {
+            val grid = compose.onNodeWithTag("library").fetchSemanticsNode().boundsInRoot
+            val cover = compose.onNodeWithTag("book_${book.id}").fetchSemanticsNode().boundsInRoot
+            return cover.top - grid.top
+        }
+        fun assertNoPlacementAnimation(toggle: () -> Unit) {
+            compose.mainClock.autoAdvance = false
+            try {
+                compose.runOnIdle(toggle)
+                compose.mainClock.advanceTimeByFrame()
+                val firstFrame = bookOffset()
+                compose.mainClock.advanceTimeBy(120)
+                val middleFrame = bookOffset()
+                compose.mainClock.advanceTimeBy(800)
+                val settled = bookOffset()
+                assertEquals("Shelf book moved after the playback layout changed", settled, firstFrame, 1f)
+                assertEquals("Shelf book animated during playback change", settled, middleFrame, 1f)
+            } finally { compose.mainClock.autoAdvance = true }
+            compose.waitForIdle()
+        }
+
+        assertNoPlacementAnimation { vm.togglePlay() }
+        compose.waitUntil(5_000) { vm.now.playing }
+        assertNoPlacementAnimation { vm.togglePlay() }
+        compose.waitUntil(5_000) { !vm.now.playing }
+    }
     @Test fun chapterPairsAreSideBySideAndOddLastChapterIsReachable() {
         val original = seed()
         val book = original.copy(tracks = listOf(original.tracks.single().copy(
