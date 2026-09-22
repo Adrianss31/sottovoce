@@ -17,3 +17,7 @@ La suite aggiunge quattro prove strumentali: pannello fissato soltanto durante l
 ## Verifica 0.6.1
 
 Due regressioni Android aggiungono il controllo della notifica multimediale in foreground e dei relativi comandi di sistema durante un WAV locale valido. La seconda porta realmente l'app in background aprendo le Impostazioni Android, verifica riproduzione non soppressa e avanzamento dal controller Media3, poi prova pausa e ripresa dai controlli della notifica. Restano necessarie prove fisiche su Bluetooth, cuffie, telefonate, risparmio energetico del produttore, codec reali e versioni Android diverse dall'emulatore.
+
+## Verifica 0.6.2
+
+Due prove Android controllano che la home inizi dallo scaffale senza titolo e riepilogo ridondanti, e che le tessere dello scaffale non si animino nei fotogrammi intermedi quando il pannello di ascolto viene fissato o reinserito nella griglia.

@@ -415,11 +415,6 @@ private val SottovoceTypography = Typography(
     LazyVerticalGrid(state = gridState, columns = GridCells.Adaptive(150.dp), modifier = Modifier.weight(1f).testTag("library"),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item(span = { GridItemSpan(maxLineSpan) }) { Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("La tua libreria", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Medium)
-            val listening = books.count { it.lastPlayedAt > 0 && !it.completed }
-            Text("${books.size} ${if (books.size == 1) "audiolibro" else "audiolibri"} · $listening in ascolto", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } }
         if (last != null && !pinned) item(key = "last_listening", span = { GridItemSpan(maxLineSpan) }) { hero(false) }
         if (stats != null && books.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             Surface(Modifier.fillMaxWidth().sottovoceSharedBounds("stats:summary").clickable { onStats("stats:summary") }, shape = SottovoceDesign.Soft) {
@@ -473,7 +468,7 @@ private val SottovoceTypography = Typography(
                     item(span = { GridItemSpan(maxLineSpan) }) { LibrarySectionTitle("Serie", "Tocca una serie per vedere tutti i volumi") }
                     seriesEntries.forEach { entry ->
                         item(key = "series:${entry.key}", span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) {
-                            Box(Modifier.animateItem()) {
+                            Box {
                                 SeriesCard(entry.name, entry.books, entry.totalCount, vm.libraryViewMode == "compact", activeId, playing,
                                     sharedKey = "series:${entry.key}") { onSeries(entry.key, "series:${entry.key}") }
                             }
@@ -485,7 +480,7 @@ private val SottovoceTypography = Typography(
                     singleEntries.forEach { entry ->
                         val b = entry.book
                         item(key = b.id, span = { GridItemSpan(if (vm.libraryViewMode == "compact") maxLineSpan else 1) }) {
-                            Box(Modifier.animateItem()) {
+                            Box {
                                 LibraryBookItem(b, vm.libraryViewMode, activeId == b.id, playing && activeId == b.id,
                                     sharedKey = "library:${b.id}") { onBook(b, "library:${b.id}") }
                             }
