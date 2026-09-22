@@ -21,3 +21,7 @@ Due regressioni Android aggiungono il controllo della notifica multimediale in f
 ## Verifica 0.6.2
 
 Due prove Android controllano che la home inizi dallo scaffale senza titolo e riepilogo ridondanti, e che le tessere dello scaffale non si animino nei fotogrammi intermedi quando il pannello di ascolto viene fissato o reinserito nella griglia.
+
+## Verifica 0.6.3
+
+Tre regressioni Android controllano che l'avvio e la pausa non spostino la home, che il pannello di ascolto cambi altezza in modo progressivo scorrendo in entrambe le direzioni e che la copertina della scheda libro segua lo scorrimento anche con un titolo lungo. Compilazione locale dell'app e dei test; il workflow GitHub esegue suite completa, lint ed emulatore Android 15 sul commit pubblicato.

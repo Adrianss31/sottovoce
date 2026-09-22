@@ -244,6 +244,80 @@ class AppSmokeTest {
         assertNoPlacementAnimation { vm.togglePlay() }
         compose.waitUntil(5_000) { !vm.now.playing }
     }
+    @Test fun playbackDoesNotMoveTheHomeViewport() {
+        val book = seed()
+        compose.runOnIdle { vm.playBook(book) }
+        compose.waitUntil(10_000) { vm.now.playing }
+        compose.runOnIdle { vm.togglePlay() }
+        compose.waitUntil(5_000) { !vm.now.playing }
+        compose.waitForIdle()
+        val gridTop = compose.onNodeWithTag("library").fetchSemanticsNode().boundsInRoot.top
+        val shelfTop = compose.onNodeWithText("Scaffale").fetchSemanticsNode().boundsInRoot.top
+
+        compose.runOnIdle { vm.togglePlay() }
+        compose.waitUntil(5_000) { vm.now.playing }
+        compose.waitForIdle()
+        assertEquals(gridTop, compose.onNodeWithTag("library").fetchSemanticsNode().boundsInRoot.top, 1f)
+        assertEquals(shelfTop, compose.onNodeWithText("Scaffale").fetchSemanticsNode().boundsInRoot.top, 2f)
+
+        compose.runOnIdle { vm.togglePlay() }
+        compose.waitUntil(5_000) { !vm.now.playing }
+        compose.waitForIdle()
+        assertEquals(gridTop, compose.onNodeWithTag("library").fetchSemanticsNode().boundsInRoot.top, 1f)
+        assertEquals(shelfTop, compose.onNodeWithText("Scaffale").fetchSemanticsNode().boundsInRoot.top, 2f)
+    }
+    @Test fun listeningPanelSizeFollowsSmallScrollsInBothDirections() {
+        val book = seed()
+        val others = (1..12).map { Book(title = "Scaffale $it", tracks = listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink = true, createdAt = it.toLong()) }
+        runBlocking { app.library.add(others) }
+        compose.runOnIdle { vm.playBook(book) }
+        compose.waitUntil(10_000) { vm.now.playing }
+        fun height() = compose.onNodeWithTag("listening_panel").fetchSemanticsNode().boundsInRoot.height
+        fun drag(up: Boolean) {
+            compose.onNodeWithTag("library").performTouchInput {
+                val from = bottom * .7f
+                if (up) swipeUp(startY = from, endY = from - 50f, durationMillis = 500)
+                else swipeDown(startY = from, endY = from + 50f, durationMillis = 500)
+            }
+            compose.waitForIdle()
+        }
+        val expanded = height()
+        drag(true)
+        val first = height()
+        drag(true)
+        val second = height()
+        drag(false)
+        val returning = height()
+        assertTrue("The panel did not begin shrinking with the first drag", first < expanded - 2f)
+        assertTrue("The panel did not keep shrinking with the second drag", second < first - 2f)
+        assertTrue("The panel did not grow with the reverse drag", returning > second + 2f)
+    }
+    @Test fun longBookTitleHeaderTracksScrollWithoutReverseJump() {
+        val book = seed()
+        runBlocking { app.library.update(book.id) { it.copy(title = "Un audiolibro con un titolo abbastanza lungo da occupare più righe nell’intestazione") } }
+        compose.onNodeWithTag("library").performScrollToNode(hasTestTag("book_${book.id}"))
+        compose.onNodeWithTag("book_${book.id}").performClick()
+        compose.onNodeWithTag("book_detail").assertIsDisplayed()
+        fun width() = compose.onNodeWithTag("detail_cover").fetchSemanticsNode().boundsInRoot.width
+        fun drag(up: Boolean) {
+            compose.onNodeWithTag("book_detail").performTouchInput {
+                val from = bottom * .7f
+                if (up) swipeUp(startY = from, endY = from - 50f, durationMillis = 500)
+                else swipeDown(startY = from, endY = from + 50f, durationMillis = 500)
+            }
+            compose.waitForIdle()
+        }
+        val expanded = width()
+        drag(true)
+        val first = width()
+        drag(true)
+        val second = width()
+        drag(false)
+        val returning = width()
+        assertTrue("Cover should respond to a small upward drag", first < expanded - 2f)
+        assertTrue("Cover should keep shrinking before the compact state", second < first - 2f)
+        assertTrue("Cover should grow during a small reverse drag", returning > second + 2f)
+    }
     @Test fun chapterPairsAreSideBySideAndOddLastChapterIsReachable() {
         val original = seed()
         val book = original.copy(tracks = listOf(original.tracks.single().copy(

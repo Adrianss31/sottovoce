@@ -52,14 +52,19 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -84,6 +89,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlin.math.roundToInt
 
 private val LightColors = lightColorScheme(primary = Color(0xFF234D38), onPrimary = Color(0xFFFFFBF4),
     background = Color(0xFFF8F5EE), surface = Color(0xFFF8F5EE), onSurface = Color(0xFF17231C),
@@ -401,21 +407,28 @@ private val SottovoceTypography = Typography(
     val seriesCount = filtered.filter { it.series.isNotBlank() }.map { seriesKey(it.series) }.toSet().size
     val gridState = rememberLazyGridState()
     val pinned = playing && activeId != null && last?.id == activeId
-    val compact by remember { derivedStateOf { gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 48 } }
-    val hero: @Composable (Boolean) -> Unit = { small ->
+    val collapseDistancePx = with(LocalDensity.current) { 48.dp.toPx() }
+    val compactProgress by remember(gridState, collapseDistancePx) { derivedStateOf {
+        if (gridState.firstVisibleItemIndex > 0) 1f
+        else (gridState.firstVisibleItemScrollOffset / collapseDistancePx).coerceIn(0f, 1f)
+    } }
+    val hero: @Composable (Float) -> Unit = { progress ->
         last?.let { current -> ContinueListeningCard(current, vm.now.takeIf { it.bookId == current.id }, vm.skipBack, vm.skipForward,
-            sharedKey = "hero:${current.id}", compact = small,
+            sharedKey = "hero:${current.id}", compactProgress = progress,
             onOpen = { onBook(current, "hero:${current.id}") },
             onBack = { if (activeId == current.id) vm.skip(-vm.skipBack) else onPlay(current) },
             onToggle = { if (activeId == current.id) vm.togglePlay() else onPlay(current) },
             onForward = { if (activeId == current.id) vm.skip(vm.skipForward) else onPlay(current) }) }
     }
-    Column(Modifier.fillMaxSize()) {
-    if (pinned) Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("pinned_listening")) { hero(compact) }
-    LazyVerticalGrid(state = gridState, columns = GridCells.Adaptive(150.dp), modifier = Modifier.weight(1f).testTag("library"),
+    LazyVerticalGrid(state = gridState, columns = GridCells.Adaptive(150.dp), modifier = Modifier.fillMaxSize().testTag("library"),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        if (last != null && !pinned) item(key = "last_listening", span = { GridItemSpan(maxLineSpan) }) { hero(false) }
+        if (last != null) {
+            if (pinned) stickyHeader(key = "last_listening") { _ ->
+                Box(Modifier.fillMaxWidth().testTag("pinned_listening")) { hero(compactProgress) }
+            }
+            else item(key = "last_listening", span = { GridItemSpan(maxLineSpan) }) { hero(0f) }
+        }
         if (stats != null && books.isNotEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
             Surface(Modifier.fillMaxWidth().sottovoceSharedBounds("stats:summary").clickable { onStats("stats:summary") }, shape = SottovoceDesign.Soft) {
                 Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -491,7 +504,6 @@ private val SottovoceTypography = Typography(
         }
     }
 }
-}
 
 @Composable private fun LibraryBookItem(book: Book, mode: String, active: Boolean, playing: Boolean, sharedKey: String?, onOpen: () -> Unit) {
     if (mode == "compact") AudiobookCompactItem(book, active, playing, sharedKey, onOpen)
@@ -520,7 +532,7 @@ private val SottovoceTypography = Typography(
     }
 }
 
-@Composable private fun ContinueListeningCard(book: Book, now: NowPlaying?, back: Int, forward: Int, sharedKey: String?, compact: Boolean = false,
+@Composable private fun ContinueListeningCard(book: Book, now: NowPlaying?, back: Int, forward: Int, sharedKey: String?, compactProgress: Float,
     onOpen: () -> Unit, onBack: () -> Unit, onToggle: () -> Unit, onForward: () -> Unit) {
     val active = now != null
     val playing = now?.playing == true
@@ -528,56 +540,74 @@ private val SottovoceTypography = Typography(
     val chapter = displayBook.currentChapter()
     val chapterProgress = if (displayBook.completed) 1f else chapter?.progress(displayBook.positionMs) ?: displayBook.progress
     val progress by animateFloatAsState(chapterProgress, tween(500), label = "progresso capitolo")
-    val coverWidth by animateDpAsState(if (compact) 42.dp else 106.dp, tween(LocalMotionPolicy.current.durationMillis(260)), label = "copertina pannello")
-    Surface(Modifier.fillMaxWidth().testTag(if (compact) "listening_compact" else "listening_expanded").animateContentSize()
+    val fraction = compactProgress.coerceIn(0f, 1f)
+    val compactControls = fraction >= .5f
+    Box(Modifier.fillMaxWidth().testTag("listening_panel")) {
+    Surface(Modifier.fillMaxWidth().testTag(if (fraction == 1f) "listening_compact" else "listening_expanded")
         .motionClickable(pressedScale = .99f, onClickLabel = "Apri ${book.title}", onClick = onOpen),
         color = MaterialTheme.colorScheme.primaryContainer, shape = SottovoceDesign.Card, shadowElevation = 2.dp) {
-        if (compact) Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Cover(book, Modifier.width(32.dp).sottovoceSharedElement(sharedKey))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
-                LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-            }
-            IconButton(onClick = onBack) { Icon(Icons.Default.Replay, "Indietro $back secondi") }
-            FilledIconButton(onClick = onToggle) { AnimatedPlayPauseIcon(playing, Modifier.size(24.dp), playContentDescription = "Riprendi", pauseContentDescription = "Pausa") }
-            IconButton(onClick = onForward) { Icon(Icons.Default.Forward30, "Avanti $forward secondi") }
-        } else Column(Modifier.padding(if (compact) 10.dp else 20.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 16.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Top) {
-                Cover(book, Modifier.width(coverWidth).sottovoceSharedElement(sharedKey))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        AnimatedContent(targetState = active && playing, label = "stato riproduzione") { isPlaying ->
-                            Icon(if (isPlaying) Icons.Default.GraphicEq else Icons.Default.History, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+        Layout(modifier = Modifier.fillMaxWidth().clipToBounds(), content = {
+            Column(Modifier.graphicsLayer { alpha = 1f - fraction }
+                .then(if (compactControls) Modifier.clearAndSetSemantics { } else Modifier)
+                .padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.Top) {
+                    Cover(book, Modifier.width(106.dp).sottovoceSharedElement(if (compactControls) null else sharedKey))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            AnimatedContent(targetState = active && playing, label = "stato riproduzione") { isPlaying ->
+                                Icon(if (isPlaying) Icons.Default.GraphicEq else Icons.Default.History, null, Modifier.size(17.dp), tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Text(if (active && playing) "IN RIPRODUZIONE" else if (active) "IN PAUSA" else "ULTIMO ASCOLTO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                         }
-                        Text(if (active && playing) "IN RIPRODUZIONE" else if (active) "IN PAUSA" else "ULTIMO ASCOLTO", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(book.title, style = MaterialTheme.typography.headlineSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                        if (book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(2.dp))
+                        Text(chapter?.title ?: "Audiolibro", style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(chapter?.let { "${timeLabel(it.elapsedMs(displayBook.positionMs))} · ${timeLabel(listeningTime(it.remainingMs(displayBook.positionMs), displayBook.speed))} rimasti" } ?: timeLabel(book.durationMs),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
+                            color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surface.copy(alpha = .65f))
                     }
-                    Text(book.title, style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.headlineSmall, maxLines = if (compact) 1 else 3, overflow = TextOverflow.Ellipsis)
-                    if (!compact && book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.bodyMedium)
-                    Spacer(Modifier.height(2.dp))
-                    if (!compact) Text(chapter?.title ?: "Audiolibro", style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(chapter?.let { "${timeLabel(it.elapsedMs(displayBook.positionMs))} · ${timeLabel(listeningTime(it.remainingMs(displayBook.positionMs), displayBook.speed))} rimasti" } ?: timeLabel(book.durationMs),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth().height(4.dp).clip(CircleShape),
-                        color = MaterialTheme.colorScheme.primary, trackColor = MaterialTheme.colorScheme.surface.copy(alpha = .65f))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    SkipButton(back, true, enabled = !compactControls, onClick = onBack)
+                    FilledIconButton(onClick = onToggle, enabled = !compactControls, modifier = Modifier.size(64.dp)) {
+                        AnimatedPlayPauseIcon(playing, Modifier.size(32.dp), playContentDescription = "Riprendi", pauseContentDescription = "Pausa")
+                    }
+                    SkipButton(forward, false, enabled = !compactControls, onClick = onForward)
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                SkipButton(back, true, onBack)
-                FilledIconButton(onClick = onToggle, modifier = Modifier.size(if (compact) 48.dp else 64.dp)) {
-                    AnimatedPlayPauseIcon(playing, Modifier.size(32.dp), playContentDescription = "Riprendi", pauseContentDescription = "Pausa")
+            Row(Modifier.graphicsLayer { alpha = fraction }
+                .then(if (compactControls) Modifier else Modifier.clearAndSetSemantics { })
+                .padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Cover(book, Modifier.width(32.dp).sottovoceSharedElement(if (compactControls) sharedKey else null))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(book.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
                 }
-                SkipButton(forward, false, onForward)
+                IconButton(onClick = onBack, enabled = compactControls) { Icon(Icons.Default.Replay, "Indietro $back secondi") }
+                FilledIconButton(onClick = onToggle, enabled = compactControls) { AnimatedPlayPauseIcon(playing, Modifier.size(24.dp), playContentDescription = "Riprendi", pauseContentDescription = "Pausa") }
+                IconButton(onClick = onForward, enabled = compactControls) { Icon(Icons.Default.Forward30, "Avanti $forward secondi") }
+            }
+        }) { measurables, constraints ->
+            val expanded = measurables[0].measure(constraints)
+            val compact = measurables[1].measure(constraints)
+            val height = (expanded.height + (compact.height - expanded.height) * fraction).roundToInt()
+            layout(constraints.maxWidth, height) {
+                expanded.placeRelative(0, 0)
+                compact.placeRelative(0, 0)
             }
         }
     }
+    }
 }
 
-@Composable private fun SkipButton(seconds: Int, back: Boolean, onClick: () -> Unit) {
+@Composable private fun SkipButton(seconds: Int, back: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val direction by animateFloatAsState(if (pressed) (if (back) -4f else 4f) else 0f,
         spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMedium), label = "direzione salto")
-    FilledTonalButton(onClick = onClick, interactionSource = interaction, shape = CircleShape,
+    FilledTonalButton(onClick = onClick, enabled = enabled, interactionSource = interaction, shape = CircleShape,
         contentPadding = PaddingValues(horizontal = 13.dp, vertical = 10.dp)) {
         Icon(if (back) Icons.Default.Replay else Icons.Default.Forward30,
             if (back) "Indietro $seconds secondi" else "Avanti $seconds secondi",
@@ -906,15 +936,28 @@ private fun shortDuration(ms: Long): String {
     return if (minutes >= 60) "${minutes / 60}h" else "${minutes}m"
 }
 
+private fun Modifier.collapseWithScroll(progress: Float): Modifier = this
+    .clipToBounds()
+    .graphicsLayer { alpha = 1f - progress }
+    .layout { measurable, constraints ->
+        val placeable = measurable.measure(constraints)
+        layout(placeable.width, (placeable.height * (1f - progress)).roundToInt()) {
+            placeable.placeRelative(0, 0)
+        }
+    }
+
 @UnstableApi
 @Composable private fun DetailScreen(book: Book, bookmarks: List<Bookmark>, active: Boolean, vm: LibraryViewModel, timer: String,
     sharedCoverKey: String?,
     onPlay: (Int?,Long?) -> Unit, onEdit: () -> Unit, onSpeed: () -> Unit, onTimer: () -> Unit, onBookmark: () -> Unit,
     onRelink: () -> Unit, onComplete: () -> Unit, onRemove: () -> Unit, onRemoveCopies: () -> Unit, onDeleteMark: (String) -> Unit) {
     val detailState = rememberLazyListState()
-    val compactHeader by remember { derivedStateOf { detailState.firstVisibleItemIndex > 0 } }
-    val headerCoverWidth by animateDpAsState(if (compactHeader) 40.dp else 100.dp,
-        tween(LocalMotionPolicy.current.durationMillis(220)), label = "copertina intestazione")
+    val headerCollapseDistancePx = with(LocalDensity.current) { 56.dp.toPx() }
+    val headerProgress by remember(detailState, headerCollapseDistancePx) { derivedStateOf {
+        if (detailState.firstVisibleItemIndex > 0) 1f
+        else (detailState.firstVisibleItemScrollOffset / headerCollapseDistancePx).coerceIn(0f, 1f)
+    } }
+    val headerCoverWidth = 100.dp - 60.dp * headerProgress
     val now = vm.now
     val playing = active && now.playing
     val shownTrack = if (active) now.trackIndex else book.trackIndex
@@ -940,10 +983,10 @@ private fun shortDuration(ms: Long): String {
     LazyColumn(Modifier.fillMaxSize().testTag("book_detail"), state = detailState,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         stickyHeader { Surface(color = MaterialTheme.colorScheme.background) {
-            Row(Modifier.padding(if (compactHeader) 8.dp else 20.dp), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                Cover(book, Modifier.width(headerCoverWidth).sottovoceSharedElement(sharedCoverKey))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    if (!compactHeader) Box(Modifier.fillMaxWidth().height(18.dp), contentAlignment = Alignment.CenterStart) {
+            Row(Modifier.padding(20.dp - 12.dp * headerProgress), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Cover(book, Modifier.width(headerCoverWidth).testTag("detail_cover").sottovoceSharedElement(sharedCoverKey))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp - 7.dp * headerProgress)) {
+                    Box(Modifier.fillMaxWidth().height(18.dp).collapseWithScroll(headerProgress), contentAlignment = Alignment.CenterStart) {
                         AnimatedContent(active, transitionSpec = {
                             (fadeIn(tween(180)) + scaleIn(tween(180), .92f)) togetherWith
                                 (fadeOut(tween(120)) + scaleOut(tween(120), .96f))
@@ -960,12 +1003,18 @@ private fun shortDuration(ms: Long): String {
                             } else Spacer(Modifier.fillMaxSize())
                         }
                     }
-                    Text(book.title, style = if (compactHeader) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall, maxLines = if (compactHeader) 2 else 4, overflow = TextOverflow.Ellipsis)
-                    if (!compactHeader && book.author.isNotBlank()) Text(book.author, style = MaterialTheme.typography.titleSmall)
-                    if (!compactHeader && book.series.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(Modifier.fillMaxWidth().height(64.dp - 16.dp * headerProgress), contentAlignment = Alignment.CenterStart) {
+                        Text(book.title,
+                            style = androidx.compose.ui.text.lerp(MaterialTheme.typography.headlineSmall, MaterialTheme.typography.titleMedium, headerProgress),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    if (book.author.isNotBlank()) Box(Modifier.fillMaxWidth().collapseWithScroll(headerProgress)) {
+                        Text(book.author, style = MaterialTheme.typography.titleSmall)
+                    }
+                    if (book.series.isNotBlank()) Row(Modifier.collapseWithScroll(headerProgress), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(Icons.Default.CollectionsBookmark, "Serie", Modifier.size(16.dp)); Text(seriesLabel(book), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                     }
-                    if (!compactHeader && book.narrator.isNotBlank()) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    if (book.narrator.isNotBlank()) Row(Modifier.collapseWithScroll(headerProgress), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                         Icon(Icons.Default.Mic, "Narratore", Modifier.size(16.dp)); Text("Letto da ${book.narrator}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
