@@ -3,6 +3,7 @@ package it.sottovoce.app
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import it.sottovoce.app.data.AppTheme
+import it.sottovoce.app.ui.svPalette
 import it.sottovoce.app.ui.themeColors
 import org.junit.Assert.*
 import org.junit.Test
@@ -18,16 +19,18 @@ class ThemeTest {
 
     @Test fun allThemesKeepTextAndControlsReadable() {
         AppTheme.entries.filter { it != AppTheme.SYSTEM }.forEach { theme ->
+            val p = svPalette(theme)
+            // Body text on every surface, secondary text on the background, text on accent controls.
+            listOf(p.ink to p.bg, p.ink to p.surface, p.ink to p.surface2, p.ink2 to p.bg, p.onAccent to p.accent)
+                .forEach { (text, background) ->
+                    assertTrue("${theme.title}: contrast ${contrast(text, background)}", contrast(text, background) >= 4.5f)
+                }
+            // Accent as a graphical object (rings, progress, selected states) on the background.
+            assertTrue("${theme.title}: accent ${contrast(p.accent, p.bg)}", contrast(p.accent, p.bg) >= 3f)
             val c = themeColors(theme)
-            listOf(c.onBackground to c.background, c.onSurface to c.surface,
-                c.onSurfaceVariant to c.surfaceVariant, c.onPrimary to c.primary,
-                c.onPrimaryContainer to c.primaryContainer,
-                c.onSecondaryContainer to c.secondaryContainer,
-                c.onTertiaryContainer to c.tertiaryContainer,
-                c.primary to c.surface, c.secondary to c.surface, c.tertiary to c.surface,
-                c.onSurface to c.surfaceContainerHighest).forEach { (text, background) ->
-                assertTrue("${theme.title}: contrast ${contrast(text, background)}", contrast(text, background) >= 4.5f)
-            }
+            assertEquals(p.bg, c.background)
+            assertTrue(contrast(c.onPrimary, c.primary) >= 4.5f)
+            assertTrue(contrast(c.onSurface, c.surface) >= 4.5f)
         }
     }
 

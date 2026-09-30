@@ -57,6 +57,7 @@ class AppSmokeTest {
         compose.runOnIdle{
             vm.screen="library";vm.message=null;vm.changeTheme("light");vm.setSkips(15,30)
             vm.changeSmartRewind(true);vm.changeNightTimerEnabled(false);vm.changeTimerFade(true);vm.changeTimerShakeExtend(false);vm.changeLibraryViewMode("grid")
+            vm.playerOpen=false;vm.selectedId=null;vm.importDone=null
         }
     }
     private fun wav():ByteArray {
@@ -121,9 +122,8 @@ class AppSmokeTest {
     }
     @Test fun themesAreSelectableAndPersistAfterActivityRecreation() {
         compose.onNodeWithContentDescription("Impostazioni").performClick()
-        compose.onNodeWithText("Aspetto").performClick()
-        compose.onNodeWithTag("theme_options").performScrollToNode(hasText("Nord"))
-        compose.onNodeWithText("Nord").performClick()
+        compose.onNodeWithTag("settings_view").assertIsDisplayed()
+        compose.onNodeWithText("Nord").performScrollTo().performClick()
         compose.runOnIdle {
             assertEquals("nord", vm.theme)
             assertEquals("nord", context.getSharedPreferences("preferences", 0).getString("theme", null))
@@ -138,14 +138,12 @@ class AppSmokeTest {
         compose.waitForIdle()
         compose.runOnIdle { assertEquals("nord", vm.theme) }
         compose.runOnIdle { vm.screen = "settings" }
-        compose.onNodeWithText("Aspetto").performClick()
+        compose.onNodeWithTag("theme_options").performScrollTo()
         screenshot("theme-picker")
-        compose.onNodeWithTag("theme_options").performScrollToNode(hasText("Carta"))
-        compose.onNodeWithText("Carta").performClick()
+        compose.onNodeWithText("Carta").performScrollTo().performClick()
         compose.runOnIdle { assertEquals("paper", vm.theme) }
         screenshot("theme-paper-settings")
     }
-
     @Suppress("DEPRECATION")
     @Test fun playingServicePublishesForegroundMediaNotificationWithSystemControls() {
         val book = seed()
@@ -214,29 +212,32 @@ class AppSmokeTest {
             }
         }
     }
-    @Test fun listeningPanelPinsOnlyDuringPlaybackAndExpandsAtTop() {
+    @Test fun nowPlayingCardHandsOverToFloatingPillWhileScrolling() {
         val book = seed()
         val others = (1..12).map { Book(title = "Scaffale $it", tracks = listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink = true, createdAt = it.toLong()) }
         runBlocking { app.library.add(others) }
         compose.runOnIdle { vm.playBook(book) }
         compose.waitUntil(10_000) { vm.now.playing }
-        compose.onNodeWithTag("pinned_listening").assertIsDisplayed()
-        compose.onNodeWithTag("library").performScrollToIndex(8)
-        compose.onNodeWithTag("listening_compact").assertIsDisplayed()
-        screenshot("05-listening-pinned")
+        compose.onNodeWithTag("now_playing").assertIsDisplayed()
+        compose.onNodeWithTag("floating_pill").assertDoesNotExist()
+        compose.onNodeWithTag("library").performScrollToIndex(10)
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("floating_pill").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("floating_pill").assertIsDisplayed()
+        screenshot("05-floating-pill")
         compose.onNodeWithTag("library").performScrollToIndex(0)
-        compose.onNodeWithTag("listening_expanded").assertIsDisplayed()
+        compose.waitForIdle()
+        compose.onNodeWithTag("floating_pill").assertDoesNotExist()
+        compose.onNodeWithTag("now_playing").assertIsDisplayed()
         compose.runOnIdle { vm.togglePlay() }
         compose.waitUntil(5_000) { !vm.now.playing }
-        compose.onNodeWithTag("pinned_listening").assertDoesNotExist()
-        compose.onNodeWithTag("library").performScrollToIndex(8)
-        compose.onNodeWithTag("listening_expanded").assertIsNotDisplayed()
+        // The card stays: it shows the last book even while paused.
+        compose.onNodeWithTag("now_playing").assertIsDisplayed()
     }
-    @Test fun homeStartsWithShelfInsteadOfRedundantLibraryHeading() {
+    @Test fun homeShowsLibraryHeadingAndFilters() {
         seed()
-        compose.onNodeWithText("Scaffale").assertIsDisplayed()
-        compose.onNodeWithText("La tua libreria").assertDoesNotExist()
-        compose.onNodeWithText("1 audiolibro · 0 in ascolto").assertDoesNotExist()
+        compose.onNodeWithText("Libreria").assertIsDisplayed()
+        compose.onNodeWithText("Scaffale").assertDoesNotExist()
+        compose.onNodeWithText("Da iniziare").assertIsDisplayed()
     }
     @Test fun shelfBooksDoNotAnimateWhenPlaybackPinsOrUnpinsThePanel() {
         val book = seed()
@@ -280,73 +281,21 @@ class AppSmokeTest {
         compose.waitUntil(5_000) { !vm.now.playing }
         compose.waitForIdle()
         val gridTop = compose.onNodeWithTag("library").fetchSemanticsNode().boundsInRoot.top
-        val shelfTop = compose.onNodeWithText("Scaffale").fetchSemanticsNode().boundsInRoot.top
+        val shelfTop = compose.onNodeWithText("Libreria").fetchSemanticsNode().boundsInRoot.top
 
         compose.runOnIdle { vm.togglePlay() }
         compose.waitUntil(5_000) { vm.now.playing }
         compose.waitForIdle()
         assertEquals(gridTop, compose.onNodeWithTag("library").fetchSemanticsNode().boundsInRoot.top, 1f)
-        assertEquals(shelfTop, compose.onNodeWithText("Scaffale").fetchSemanticsNode().boundsInRoot.top, 2f)
+        assertEquals(shelfTop, compose.onNodeWithText("Libreria").fetchSemanticsNode().boundsInRoot.top, 2f)
 
         compose.runOnIdle { vm.togglePlay() }
         compose.waitUntil(5_000) { !vm.now.playing }
         compose.waitForIdle()
         assertEquals(gridTop, compose.onNodeWithTag("library").fetchSemanticsNode().boundsInRoot.top, 1f)
-        assertEquals(shelfTop, compose.onNodeWithText("Scaffale").fetchSemanticsNode().boundsInRoot.top, 2f)
+        assertEquals(shelfTop, compose.onNodeWithText("Libreria").fetchSemanticsNode().boundsInRoot.top, 2f)
     }
-    @Test fun listeningPanelSizeFollowsSmallScrollsInBothDirections() {
-        val book = seed()
-        val others = (1..12).map { Book(title = "Scaffale $it", tracks = listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink = true, createdAt = it.toLong()) }
-        runBlocking { app.library.add(others) }
-        compose.runOnIdle { vm.playBook(book) }
-        compose.waitUntil(10_000) { vm.now.playing }
-        fun height() = compose.onNodeWithTag("listening_panel").fetchSemanticsNode().boundsInRoot.height
-        fun drag(up: Boolean) {
-            compose.onNodeWithTag("library").performTouchInput {
-                val from = bottom * .7f
-                if (up) swipeUp(startY = from, endY = from - 50f, durationMillis = 500)
-                else swipeDown(startY = from, endY = from + 50f, durationMillis = 500)
-            }
-            compose.waitForIdle()
-        }
-        val expanded = height()
-        drag(true)
-        val first = height()
-        drag(true)
-        val second = height()
-        drag(false)
-        val returning = height()
-        assertTrue("The panel did not begin shrinking with the first drag", first < expanded - 2f)
-        assertTrue("The panel did not keep shrinking with the second drag", second < first - 2f)
-        assertTrue("The panel did not grow with the reverse drag", returning > second + 2f)
-    }
-    @Test fun longBookTitleHeaderTracksScrollWithoutReverseJump() {
-        val book = seed()
-        runBlocking { app.library.update(book.id) { it.copy(title = "Un audiolibro con un titolo abbastanza lungo da occupare più righe nell’intestazione") } }
-        compose.onNodeWithTag("library").performScrollToNode(hasTestTag("book_${book.id}"))
-        compose.onNodeWithTag("book_${book.id}").performClick()
-        compose.onNodeWithTag("book_detail").assertIsDisplayed()
-        fun width() = compose.onNodeWithTag("detail_cover").fetchSemanticsNode().boundsInRoot.width
-        fun drag(up: Boolean) {
-            compose.onNodeWithTag("book_detail").performTouchInput {
-                val from = bottom * .7f
-                if (up) swipeUp(startY = from, endY = from - 50f, durationMillis = 500)
-                else swipeDown(startY = from, endY = from + 50f, durationMillis = 500)
-            }
-            compose.waitForIdle()
-        }
-        val expanded = width()
-        drag(true)
-        val first = width()
-        drag(true)
-        val second = width()
-        drag(false)
-        val returning = width()
-        assertTrue("Cover should respond to a small upward drag", first < expanded - 2f)
-        assertTrue("Cover should keep shrinking before the compact state", second < first - 2f)
-        assertTrue("Cover should grow during a small reverse drag", returning > second + 2f)
-    }
-    @Test fun chapterPairsAreSideBySideAndOddLastChapterIsReachable() {
+    @Test fun chapterListReachesLastChapterAndPlaysIt() {
         val original = seed()
         val book = original.copy(tracks = listOf(original.tracks.single().copy(
             chapters = (1..21).map { Chapter("Capitolo $it", (it - 1) * 1_000L) })))
@@ -356,13 +305,12 @@ class AppSmokeTest {
         compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("chapter_1"))
         val first = compose.onNodeWithTag("chapter_1").fetchSemanticsNode().boundsInRoot
         val second = compose.onNodeWithTag("chapter_2").fetchSemanticsNode().boundsInRoot
-        assertEquals(first.top, second.top, 1f)
-        assertTrue(second.left >= first.right)
+        assertTrue(second.top >= first.bottom - 1f)
         compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("chapter_9"))
-        screenshot("06-chapter-columns")
+        screenshot("06-chapters")
         compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("chapter_21"))
         compose.onNodeWithTag("chapter_21").assertIsDisplayed()
-        compose.onNodeWithText("Capitolo 21").performClick()
+        compose.onNodeWithTag("chapter_21").performClick()
         compose.waitUntil(10_000) { vm.now.playing && vm.now.position >= 20_000 }
     }
     @Test fun resetStopsActiveBookAndPersistsUnstartedWithoutLosingBookmarks() {
@@ -372,7 +320,8 @@ class AppSmokeTest {
         compose.onNodeWithTag("book_${book.id}").performClick()
         compose.runOnIdle { vm.playBook(book, 0, 16_000) }
         compose.waitUntil(10_000) { vm.now.playing && vm.now.position >= 16_000 }
-        compose.onNodeWithTag("reset_book").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Gestione del libro").performClick()
+        compose.onNodeWithTag("reset_book").performClick()
         compose.waitUntil(10_000) { vm.busy == null && vm.now.bookId == null && app.library.books.value.single().lastPlayedAt == 0L }
         runBlocking { app.library.load() }
         val reset = app.library.books.value.single()
@@ -382,7 +331,7 @@ class AppSmokeTest {
         assertEquals("Conserva", app.library.bookmarks.value.single().note)
         compose.onNodeWithContentDescription("Torna indietro").performClick()
         compose.onNodeWithTag("library").performScrollToIndex(0)
-        compose.onNodeWithTag("listening_expanded").assertDoesNotExist()
+        compose.onNodeWithTag("now_playing").assertDoesNotExist()
         compose.runOnIdle { vm.playBook(reset) }
         compose.waitUntil(10_000) { vm.now.playing }
         assertTrue(vm.now.position < 5_000)
@@ -400,20 +349,23 @@ class AppSmokeTest {
         compose.mainClock.autoAdvance = false
         try {
             compose.onNodeWithTag("book_${book.id}").performClick()
-            compose.mainClock.advanceTimeBy(160)
+            compose.mainClock.advanceTimeBy(260)
             screenshot("08-cover-opening")
         } finally { compose.mainClock.autoAdvance = true }
         compose.waitForIdle()
+        compose.onNodeWithTag("detail_cover").assertIsDisplayed()
         screenshot("09-cover-destination")
-        compose.onNodeWithTag("book_detail").performScrollToNode(hasText("Gestione del libro"))
         compose.mainClock.autoAdvance = false
         try {
             compose.onNodeWithContentDescription("Torna indietro").performClick()
-            compose.mainClock.advanceTimeBy(160)
+            compose.mainClock.advanceTimeBy(260)
             screenshot("10-cover-returning")
         } finally { compose.mainClock.autoAdvance = true }
+        compose.waitForIdle()
+        compose.onNodeWithTag("book_detail").assertDoesNotExist()
         compose.onNodeWithTag("book_${book.id}").assertIsDisplayed()
         compose.runOnIdle { vm.changeTheme("dark") }
+        compose.waitForIdle()
         screenshot("11-library-dark")
     }
     @Test fun emptyLibraryOffersOnlyLocalImport() {
@@ -425,22 +377,22 @@ class AppSmokeTest {
         compose.onNodeWithText("Scegli file").assertIsDisplayed()
         compose.onNodeWithText("Scegli cartella").assertIsDisplayed()
     }
-    @Test fun seriesAreGroupedUnderOneCardAndLibraryCanBecomeCompact() {
+    @Test fun seriesAreGroupedUnderOneRowAndOpenTheirOwnScreen() {
         val book=seed()
         runBlocking{app.library.update(book.id){it.copy(series="Trilogia di prova",seriesPosition=1)}}
         compose.waitUntil(5000){compose.onAllNodesWithText("Trilogia di prova",substring=true).fetchSemanticsNodes().isNotEmpty()}
-        // In home il libro in serie non è più una card singola: è raggruppato sotto la card della serie.
+        // In home il libro in serie non è una riga singola: è raggruppato sotto la riga della serie.
         compose.onNodeWithTag("book_${book.id}").assertDoesNotExist()
         compose.onNodeWithTag("library").performScrollToNode(hasTestTag("series_card_Trilogia di prova"))
-        compose.onNodeWithTag("series_card_Trilogia di prova").assertIsDisplayed()
-        // Anche in vista compatta la serie resta raggruppata.
-        compose.onNodeWithContentDescription("Vista compatta").performScrollTo().performClick()
         compose.onNodeWithTag("series_card_Trilogia di prova").assertIsDisplayed()
         // Un tocco apre la serie e mostra i suoi libri.
         compose.onNodeWithTag("series_card_Trilogia di prova").performClick()
         compose.onNodeWithTag("series_view").assertIsDisplayed()
         compose.onNodeWithTag("book_${book.id}").assertIsDisplayed()
         screenshot("03-series")
+        compose.onNodeWithContentDescription("Indietro").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag("series_view").assertDoesNotExist()
     }
     @Test fun backFromScrolledBookReturnsToItsLibraryPosition() {
         val target = Book(title="Libro in fondo", tracks=listOf(AudioTrack(uri="", name="Audio da ricollegare", durationMs=30_000)), needsRelink=true, createdAt=1)
@@ -451,8 +403,9 @@ class AppSmokeTest {
         compose.waitUntil(10_000) { app.library.books.value.size == newer.size + 1 }
         compose.onNodeWithTag("library").performScrollToNode(hasTestTag("book_${target.id}"))
         compose.onNodeWithTag("book_${target.id}").performClick()
-        compose.onNodeWithTag("book_detail").performScrollToNode(hasText("Gestione del libro"))
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("chapter_1"))
         compose.onNodeWithContentDescription("Torna indietro").performClick()
+        compose.waitForIdle()
         compose.onNodeWithTag("book_${target.id}").assertIsDisplayed()
         compose.onNodeWithTag("book_${newer.last().id}").assertDoesNotExist()
     }
@@ -463,10 +416,11 @@ class AppSmokeTest {
         screenshot("02-library-books")
         compose.onNodeWithTag("book_${book.id}").performClick()
         compose.onNodeWithTag("book_detail").assertIsDisplayed()
-        compose.onNodeWithText("Inizia l’ascolto").performScrollTo().performClick()
+        compose.onNodeWithTag("play_pause").performScrollTo().performClick()
         compose.waitUntil(10_000){vm.now.playing}
         compose.onNodeWithTag("book_detail").assertIsDisplayed()
         compose.onNodeWithTag("player").assertDoesNotExist()
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasText("Capitolo introduttivo"))
         compose.onAllNodesWithText("Capitolo introduttivo").onFirst().assertIsDisplayed()
         compose.runOnIdle {
             assertEquals("Capitolo introduttivo",vm.controller?.mediaMetadata?.title?.toString())
@@ -477,14 +431,14 @@ class AppSmokeTest {
         compose.runOnIdle{assertEquals("Seconda parte",vm.controller?.mediaMetadata?.title?.toString())}
         compose.runOnIdle{vm.seek(10_000);vm.speed(1.5f)}
         compose.waitUntil(10_000){app.library.books.value.first().positionMs>=9000}
-        compose.onNodeWithTag("play_pause").performClick()
+        compose.onNodeWithTag("play_pause").performScrollTo().performClick()
         compose.waitUntil(5000){!vm.now.playing}
         screenshot("03-player")
         compose.onNodeWithTag("book_detail").performScrollToNode(hasText("Seconda parte"))
         screenshot("04-chapters")
-        compose.onNodeWithText("Segnalibro",substring=false).performScrollTo().performClick()
-        compose.onNodeWithText("Nota facoltativa").performTextInput("Un passaggio da ricordare")
-        compose.onNodeWithText("Salva",substring=false).performClick()
+        compose.onNodeWithContentDescription("Aggiungi segnalibro").performScrollTo().performClick()
+        compose.onNodeWithTag("bookmark_note").performTextInput("Un passaggio da ricordare")
+        compose.onNodeWithTag("save_bookmark").performClick()
         compose.waitUntil(5000){app.library.bookmarks.value.isNotEmpty()}
         runBlocking {app.library.update(book.id){it.copy(title="Titolo corretto")}}
         assertEquals(1,app.library.bookmarks.value.size)

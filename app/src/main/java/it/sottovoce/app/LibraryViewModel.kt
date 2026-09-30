@@ -28,6 +28,8 @@ import java.io.File
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+data class ImportResult(val count: Int, val firstBookId: String?, val tracks: Int, val copied: Boolean)
+
 data class NowPlaying(val bookId: String? = null, val trackIndex: Int = 0, val position: Long = 0,
     val duration: Long = 0, val playing: Boolean = false, val speed: Float = 1f)
 
@@ -58,8 +60,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         private set
     var libraryViewMode by mutableStateOf(prefs.getString("libraryViewMode", "grid") ?: "grid")
         private set
+    var autoUpdateCheck by mutableStateOf(prefs.getBoolean("autoUpdateCheck", true))
+        private set
+    /** Sub-screen shown above the home: library, series, stats, import or settings. */
     var screen by mutableStateOf("library")
+    /** Book shown by the player overlay. */
     var selectedId by mutableStateOf<String?>(null)
+    var playerOpen by mutableStateOf(false)
+    /** Result of the last completed import, shown by the import screen's final step. */
+    var importDone by mutableStateOf<ImportResult?>(null)
+    /** idle, download, verify, open: drives the update banner. */
+    var updatePhase by mutableStateOf("idle")
+        private set
     var selectedSeries by mutableStateOf<String?>(null)
     var stats by mutableStateOf<ListeningStats?>(null)
         private set
@@ -129,7 +141,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
         viewModelScope.launch { PlaybackSignals.error.collect { if (it != null) { message = it; PlaybackSignals.error.value = null } } }
         viewModelScope.launch {
-            if (!BuildConfig.DEBUG) runCatching { refreshRelease() }
+            if (!BuildConfig.DEBUG && autoUpdateCheck) runCatching { refreshRelease() }
         }
     }
     private fun snapshot() {
@@ -189,13 +201,19 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun confirmImport() = task(if (copyImports) "Copia dei file…" else "Importazione…") {
         val replacing = relinkId
         if (replacing != null && now.bookId == replacing) stopCurrent()
-        val count = importer.commit(candidates, (copyImports || mustCopyImports) && replacing == null, replacing) { detail -> viewModelScope.launch { operationDetail = detail } }
+        val copied = (copyImports || mustCopyImports) && replacing == null
+        val before = library.books.value.map { it.id }.toSet()
+        val count = importer.commit(candidates, copied, replacing) { detail -> viewModelScope.launch { operationDetail = detail } }
         refreshStats()
-        candidates = emptyList(); relinkId = null; screen = "library"
-        message = if (replacing != null) "File ricollegati. Progressi e segnalibri conservati." else "$count ${if (count == 1) "libro importato" else "libri importati"}."
+        val added = library.books.value.filter { it.id !in before }
+        candidates = emptyList(); relinkId = null
+        if (replacing != null) {
+            screen = "library"
+            message = "File ricollegati. La tua posizione è conservata."
+        } else importDone = ImportResult(count, added.firstOrNull()?.id, added.sumOf { it.tracks.size }, copied)
     }
     fun playBook(book: Book, index: Int? = null, position: Long? = null) {
-        if (book.needsRelink || book.tracks.any { !library.isSafeAudioUri(it.uri) }) { selectedId = book.id; screen = "detail"; message = "Ricollega i file prima di ascoltare."; return }
+        if (book.needsRelink || book.tracks.any { !library.isSafeAudioUri(it.uri) }) { selectedId = book.id; playerOpen = true; message = "Ricollega i file prima di ascoltare."; return }
         val c = controller ?: run { message = "Il lettore si sta avviando. Riprova fra un istante."; return }
         PlaybackSignals.error.value = null
         val track = (index ?: book.trackIndex).coerceIn(book.tracks.indices)
@@ -263,6 +281,32 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         library.bookmark(Bookmark(bookId = id, trackIndex = now.trackIndex, positionMs = now.position, note = note.take(10_000)))
         message = "Segnalibro salvato."
     } } }
+    /** Bookmarks the playing position, or the saved position of a book that is not playing. */
+    fun addBookmark(book: Book, note: String) {
+        if (now.bookId == book.id) return addBookmark(note)
+        task("Salvataggio…") {
+            library.bookmark(Bookmark(bookId = book.id, trackIndex = book.trackIndex, positionMs = book.positionMs, note = note.take(10_000)))
+            message = "Segnalibro salvato."
+        }
+    }
+    fun removeBookmark(id: String) = task("Rimozione…") { library.removeBookmark(id) }
+    /** Live speed while dragging the slider; persisted by [speed] when the drag ends. */
+    fun previewSpeed(book: Book, value: Float) {
+        if (now.bookId == book.id) { controller?.setPlaybackSpeed(value); now = now.copy(speed = value) }
+    }
+    /** Starts playback with a sleep timer, as the v2 sleep sheet does. */
+    fun startTimer(book: Book, minutes: Int, play: (Book) -> Unit) {
+        if (now.bookId == book.id) {
+            timer(minutes)
+            if (!now.playing && minutes != 0) togglePlay()
+        } else if (minutes != 0) {
+            pendingTimer = book.id to minutes
+            play(book)
+        }
+    }
+    fun extendTimer() {
+        controller?.sendCustomCommand(SessionCommand(PlaybackSignals.TOGGLE_TIMER_COMMAND, Bundle.EMPTY), Bundle.EMPTY)
+    }
     fun saveMetadata(book: Book, title: String, author: String, narrator: String, series: String, seriesPosition: Int?) = task("Salvataggio…") {
         require(title.isNotBlank()) { "Il titolo non può essere vuoto." }
         require(seriesPosition == null || seriesPosition in 1..999) { "Il numero nella serie deve essere compreso tra 1 e 999." }
@@ -291,7 +335,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         if (now.bookId == book.id) stopCurrent()
         if (copiesOnly) library.removeCopies(book.id) else library.removeBook(book.id)
         refreshStats()
-        screen = "library"
+        if (!copiesOnly) { playerOpen = false; message = "Rimosso. I file originali non sono stati toccati." }
     }
     private suspend fun stopCurrent() {
         val result = controller?.sendCustomCommand(SessionCommand("it.sottovoce.STOP_AND_SAVE", Bundle.EMPTY), Bundle.EMPTY)
@@ -344,15 +388,24 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 val info = release ?: return@launch
                 val file = updateFile ?: run {
                     updateProgress = 0f
+                    updatePhase = "download"
                     updater.download(info) { updateProgress = it }.also { updateFile = it }
                 }
+                updatePhase = "verify"
                 withContext(Dispatchers.IO) { updater.verifyApk(file, info) }
+                updatePhase = "open"
                 stopCurrent()
-                onIntent(updater.install(file))
+                val intent = updater.install(file)
+                delay(900)
+                onIntent(intent)
+                if (intent.action != android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES) message = "Programma di installazione aperto."
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) { updateFile?.delete(); updateFile = null; message = e.message ?: "Aggiornamento non riuscito. Riprova il download." }
-            finally { updateInProgress = false }
+            finally { updateInProgress = false; updatePhase = "idle" }
         }
+    }
+    fun changeAutoUpdateCheck(enabled: Boolean) {
+        autoUpdateCheck = enabled; prefs.edit().putBoolean("autoUpdateCheck", enabled).apply()
     }
     fun changeTheme(value: String) {
         require(AppTheme.fromId(value) != null)
@@ -388,6 +441,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         prefs.edit().putString("libraryViewMode", libraryViewMode).apply()
     }
     fun openSeries(name: String) { selectedSeries = name; screen = "series" }
+    fun refreshStatsNow() { viewModelScope.launch { refreshStats() } }
     fun openStats() {
         viewModelScope.launch {
             refreshStats()

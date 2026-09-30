@@ -56,6 +56,9 @@ import kotlin.math.sqrt
 object PlaybackSignals {
     val error = MutableStateFlow<String?>(null)
     val timer = MutableStateFlow("")
+    /** Remaining and total sleep-timer time in ms (0 when no timer), for the countdown ring. */
+    val timerRemainingMs = MutableStateFlow(0L)
+    val timerTotalMs = MutableStateFlow(0L)
     const val TIMER_COMMAND = "it.sottovoce.SET_TIMER"
     const val TOGGLE_TIMER_COMMAND = "it.sottovoce.TOGGLE_TIMER_30"
 }
@@ -376,6 +379,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
     }
     private fun configureTimer(minutes: Int, automatic: Boolean = false) {
         stopTimer(false)
+        PlaybackSignals.timerTotalMs.value = 0
         automaticTimer = automatic
         if (minutes == -1) {
             chapterTrack = player.currentMediaItemIndex
@@ -424,6 +428,9 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
             chapterTrack >= 0 && chapterEnd > 0 -> (chapterEnd - player.currentPosition).coerceAtLeast(0)
             else -> -1L
         }
+        PlaybackSignals.timerRemainingMs.value = remaining.coerceAtLeast(0)
+        if (remaining < 0) PlaybackSignals.timerTotalMs.value = 0
+        else if (remaining > PlaybackSignals.timerTotalMs.value) PlaybackSignals.timerTotalMs.value = remaining
         PlaybackSignals.timer.value = when {
             remaining < 0 -> ""
             chapterTrack >= 0 -> "Fine capitolo"
@@ -445,6 +452,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
         val endPosition = chapterEnd
         deadline = 0; chapterEnd = -1; chapterTrack = -1; automaticTimer = false
         PlaybackSignals.timer.value = ""
+        PlaybackSignals.timerRemainingMs.value = 0; PlaybackSignals.timerTotalMs.value = 0
         sensorManager.unregisterListener(this)
         if (::player.isInitialized) {
             player.pauseAtEndOfMediaItems = false
@@ -459,6 +467,7 @@ class PlaybackService : MediaSessionService(), SensorEventListener {
     private fun stopTimer(pause: Boolean) {
         deadline = 0; chapterEnd = -1; chapterTrack = -1; automaticTimer = false
         PlaybackSignals.timer.value = ""
+        PlaybackSignals.timerRemainingMs.value = 0; PlaybackSignals.timerTotalMs.value = 0
         sensorManager.unregisterListener(this)
         if (::player.isInitialized) { player.pauseAtEndOfMediaItems = false; player.volume = 1f; if (pause) player.pause() }
         updateMediaButtons()

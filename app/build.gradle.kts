@@ -18,8 +18,8 @@ android {
         applicationId = "it.sottovoce.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = providers.gradleProperty("releaseCode").orNull?.toInt() ?: 24
-        versionName = providers.gradleProperty("releaseName").orNull ?: "0.6.4"
+        versionCode = providers.gradleProperty("releaseCode").orNull?.toInt() ?: 25
+        versionName = providers.gradleProperty("releaseName").orNull ?: "0.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"https://github.com/Adrianss31/sottovoce/releases/latest/download/update.json\"")
         buildConfigField("String", "UPDATE_PUBLIC_KEY", "\"$updateKey\"")
@@ -57,6 +57,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.3")
     implementation("androidx.documentfile:documentfile:1.0.1")
+    implementation("androidx.palette:palette-ktx:1.0.0")
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

@@ -265,6 +265,8 @@ data class ListeningStats(
     val activeDaysLast7: Int = 0,
     val currentStreak: Int = 0,
     val days: List<DayStat> = emptyList(),
+    /** Most listened books by id, for covers in the statistics screen. */
+    val topBookIds: List<Pair<String, Long>> = emptyList(),
 )
 
 fun computeStats(books: List<Book>, days: List<ListeningDay>, today: LocalDate): ListeningStats {
@@ -290,12 +292,13 @@ fun computeStats(books: List<Book>, days: List<ListeningDay>, today: LocalDate):
     var streak = 0
     while (daySet.contains(today.minusDays(streak.toLong()).toEpochDay())) streak++
     val series = books.filter { it.series.isNotBlank() }.groupBy { seriesKey(it.series) }
-    val topBooks = days.groupBy { it.bookId }.mapValues { (_, list) -> list.sumOf { it.durationMs } }
+    val topEntries = days.groupBy { it.bookId }.mapValues { (_, list) -> list.sumOf { it.durationMs } }
         .entries.sortedByDescending { it.value }.take(5)
-        .mapNotNull { (id, ms) -> books.firstOrNull { it.id == id }?.let { it.title to ms } }
+        .mapNotNull { (id, ms) -> books.firstOrNull { it.id == id }?.let { it to ms } }
+    val topBooks = topEntries.map { (book, ms) -> book.title to ms }
     return ListeningStats(totalMs, thisMonthMs, months, books.count { it.completed }, books.size,
         series.count { (_, list) -> list.all { it.completed } }, series.size, topBooks,
-        todayMs, weekMs, activeDays, streak, daily)
+        todayMs, weekMs, activeDays, streak, daily, topEntries.map { (book, ms) -> book.id to ms })
 }
 
 /** Elementi mostrati nella pagina principale: le serie diventano una sola card, i libri senza serie restano singoli. */

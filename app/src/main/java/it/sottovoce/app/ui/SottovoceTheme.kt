@@ -1,134 +1,139 @@
 package it.sottovoce.app.ui
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Headphones
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.*
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import it.sottovoce.app.R
 import it.sottovoce.app.data.AppTheme
 
-private data class Palette(
-    val background: Long, val surface: Long, val panel: Long, val text: Long, val muted: Long,
-    val primary: Long, val secondary: Long, val tertiary: Long,
-    val primaryPanel: Long, val secondaryPanel: Long, val tertiaryPanel: Long,
+/**
+ * Sottovoce v2 design tokens. Theme colors apply to the library, sub-screens and
+ * sheets; the player and the now-playing surfaces use each book's own colors.
+ */
+@Immutable
+data class SvPalette(
+    val bg: Color,
+    val surface: Color,
+    val surface2: Color,
+    val ink: Color,
+    val ink2: Color,
+    val accent: Color,
+    val onAccent: Color,
+    val line: Color,
+    val dark: Boolean,
+) {
+    val error: Color get() = SvError
+}
+
+val SvError = Color(0xFFD9573A)
+
+private fun palette(bg: Long, sf: Long, sf2: Long, ink: Long, ink2: Long, ac: Long, onAc: Long, dark: Boolean) = SvPalette(
+    Color(bg), Color(sf), Color(sf2), Color(ink), Color(ink2), Color(ac), Color(onAc),
+    if (dark) Color.White.copy(alpha = .10f) else Color.Black.copy(alpha = .10f), dark,
 )
 
-/** Each theme owns every role: Material defaults must not introduce unrelated purple surfaces. */
+fun svPalette(theme: AppTheme): SvPalette = when (theme) {
+    AppTheme.PAPER -> palette(0xFFF6F0E3, 0xFFECE3D0, 0xFFE1D5BD, 0xFF2A2420, 0xFF6A5F55, 0xFFB4512D, 0xFFFFF7EA, false)
+    AppTheme.LIGHT, AppTheme.SYSTEM -> palette(0xFFF4EFE4, 0xFFEBE4D4, 0xFFE0D7C3, 0xFF1D211B, 0xFF5D6357, 0xFF4B6A48, 0xFFF4EFE4, false)
+    AppTheme.DARK -> palette(0xFF121613, 0xFF1B211C, 0xFF262E27, 0xFFEFE9DC, 0xFFA4A99C, 0xFFC9D6A3, 0xFF121613, true)
+    AppTheme.GRAPHITE -> palette(0xFF151517, 0xFF1F1F23, 0xFF2A2A30, 0xFFECEBF2, 0xFF9D9BA8, 0xFFB8A8F0, 0xFF151517, true)
+    AppTheme.NORD -> palette(0xFF1B2129, 0xFF242C36, 0xFF2E3844, 0xFFE6EDF3, 0xFF97A4B3, 0xFFA9D2E6, 0xFF1B2129, true)
+    AppTheme.DUSK -> palette(0xFF1D1520, 0xFF291F2D, 0xFF352A3A, 0xFFF3E7E2, 0xFFB09FAA, 0xFFF2B08F, 0xFF1D1520, true)
+    AppTheme.PETROL -> palette(0xFF0E1B22, 0xFF15262F, 0xFF1D323D, 0xFFEEE7D6, 0xFF9AAEB3, 0xFFD9B25F, 0xFF0E1B22, true)
+}
+
+/** Material roles derived from the same tokens, for the few restyled Material components. */
 fun themeColors(theme: AppTheme): ColorScheme {
-    val p = when (theme) {
-        AppTheme.PAPER -> Palette(0xFFF7F0E3, 0xFFFFFAF1, 0xFFEDE3D3, 0xFF302A25, 0xFF6D6258,
-            0xFF8A4535, 0xFF3F6864, 0xFF68507C, 0xFFF0D8C6, 0xFFD8E7E1, 0xFFE8DEEF)
-        AppTheme.GRAPHITE -> Palette(0xFF24252B, 0xFF2D2E36, 0xFF383A45, 0xFFF0EDF5, 0xFFC7C2D1,
-            0xFFC4B5FD, 0xFF8BD5CA, 0xFFE9B680, 0xFF443D5F, 0xFF294A47, 0xFF51402C)
-        AppTheme.NORD -> Palette(0xFF2E3440, 0xFF343C4A, 0xFF434C5E, 0xFFECEFF4, 0xFFCBD3E0,
-            0xFF88C0D0, 0xFFA3BE8C, 0xFFEBCB8B, 0xFF334F5C, 0xFF3D4D35, 0xFF524833)
-        AppTheme.DUSK -> Palette(0xFF29232E, 0xFF342C3B, 0xFF453749, 0xFFF7EAF2, 0xFFD2BFCD,
-            0xFFF2B8A0, 0xFFC4B0E5, 0xFF9BCBBD, 0xFF573B39, 0xFF453854, 0xFF314C46)
-        AppTheme.PETROL -> Palette(0xFF102D34, 0xFF183942, 0xFF24454E, 0xFFF4EEDF, 0xFFBBCBCB,
-            0xFFE8C789, 0xFF8ED2C7, 0xFFB8C5EB, 0xFF4B432D, 0xFF244D49, 0xFF34435D)
-        AppTheme.DARK -> Palette(0xFF1D211E, 0xFF1D211E, 0xFF292E29, 0xFFF3EFE5, 0xFFB6BCAE,
-            0xFFB1D2A5, 0xFFD1BCE0, 0xFFE3B786, 0xFF354531, 0xFF493C51, 0xFF51412D)
-        AppTheme.LIGHT, AppTheme.SYSTEM -> Palette(0xFFF8F5EE, 0xFFF8F5EE, 0xFFF0ECE3, 0xFF17231C, 0xFF60645E,
-            0xFF234D38, 0xFF685078, 0xFF79512B, 0xFFE7EDE2, 0xFFF1EAF7, 0xFFF1DFC7)
-    }
-    val base = if (theme.dark) darkColorScheme() else lightColorScheme()
-    val bg = Color(p.background); val surface = Color(p.surface); val panel = Color(p.panel)
-    val text = Color(p.text); val muted = Color(p.muted)
-    val onAccent = if (theme.dark) bg else Color.White
+    val p = svPalette(theme)
+    val base = if (p.dark) darkColorScheme() else lightColorScheme()
     return base.copy(
-        primary = Color(p.primary), onPrimary = onAccent,
-        primaryContainer = Color(p.primaryPanel), onPrimaryContainer = text,
-        secondary = Color(p.secondary), onSecondary = onAccent,
-        secondaryContainer = Color(p.secondaryPanel), onSecondaryContainer = text,
-        tertiary = Color(p.tertiary), onTertiary = onAccent,
-        tertiaryContainer = Color(p.tertiaryPanel), onTertiaryContainer = text,
-        background = bg, onBackground = text, surface = surface, onSurface = text,
-        surfaceVariant = panel, onSurfaceVariant = muted, surfaceTint = Color.Transparent,
-        surfaceDim = bg, surfaceBright = panel, surfaceContainerLowest = bg,
-        surfaceContainerLow = surface, surfaceContainer = lerp(surface, panel, .35f),
-        surfaceContainerHigh = lerp(surface, panel, .7f), surfaceContainerHighest = panel,
-        outline = lerp(muted, surface, .3f), outlineVariant = lerp(muted, surface, .75f),
-        inverseSurface = text, inverseOnSurface = bg,
-        inversePrimary = Color(p.primaryPanel),
-        error = if (theme.dark) Color(0xFFFFB4AB) else Color(0xFFBA1A1A),
-        onError = if (theme.dark) Color(0xFF690005) else Color.White,
-        errorContainer = if (theme.dark) Color(0xFF93000A) else Color(0xFFFFDAD6),
-        onErrorContainer = if (theme.dark) Color(0xFFFFDAD6) else Color(0xFF410002),
+        primary = p.accent, onPrimary = p.onAccent,
+        primaryContainer = p.surface2, onPrimaryContainer = p.ink,
+        secondary = p.ink, onSecondary = p.bg,
+        secondaryContainer = p.surface2, onSecondaryContainer = p.ink,
+        tertiary = p.accent, onTertiary = p.onAccent,
+        tertiaryContainer = p.surface, onTertiaryContainer = p.ink,
+        background = p.bg, onBackground = p.ink, surface = p.bg, onSurface = p.ink,
+        surfaceVariant = p.surface, onSurfaceVariant = p.ink2, surfaceTint = Color.Transparent,
+        surfaceDim = p.bg, surfaceBright = p.surface, surfaceContainerLowest = p.bg,
+        surfaceContainerLow = p.surface, surfaceContainer = p.surface,
+        surfaceContainerHigh = p.surface2, surfaceContainerHighest = p.surface2,
+        outline = lerp(p.ink2, p.bg, .2f), outlineVariant = lerp(p.ink2, p.bg, .7f),
+        inverseSurface = p.ink, inverseOnSurface = p.bg, inversePrimary = p.accent,
+        error = SvError, onError = Color.White,
+        errorContainer = SvError.copy(alpha = .16f), onErrorContainer = p.ink,
         scrim = Color.Black,
     )
 }
 
+internal val LocalSv = compositionLocalOf { svPalette(AppTheme.PAPER) }
+
+/** Every theme color animates over 600 ms when the theme changes. */
 @Composable
-fun ThemePicker(selectedId: String, onDismiss: () -> Unit, onSelect: (String) -> Unit) {
-    val systemDark = isSystemInDarkTheme()
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Aspetto") }, text = {
-        LazyColumn(Modifier.testTag("theme_options").selectableGroup(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Text("Palette complete per dare una personalità diversa al tuo scaffale.", style = MaterialTheme.typography.bodyMedium) }
-            items(AppTheme.entries, key = { it.id }) { theme ->
-                val colors = themeColors(AppTheme.resolve(theme.id, systemDark))
-                Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .selectable(selected = selectedId == theme.id, role = Role.RadioButton,
-                        onClick = { onSelect(theme.id) }).padding(4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = selectedId == theme.id, onClick = null)
-                        Spacer(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(theme.title, style = MaterialTheme.typography.titleSmall)
-                            Text(theme.description, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    ThemePreview(colors)
-                }
-            }
-        }
-    }, confirmButton = { TextButton(onClick = onDismiss) { Text("Chiudi") } })
+internal fun animatedPalette(target: SvPalette, animate: Boolean): SvPalette {
+    val d = if (animate) SvMotion.DurationColor else 0
+    @Composable fun a(c: Color, label: String): Color {
+        val v by animateColorAsState(c, tween(d, easing = SvMotion.Emphasized), label = label)
+        return v
+    }
+    return SvPalette(
+        bg = a(target.bg, "tema bg"), surface = a(target.surface, "tema surface"),
+        surface2 = a(target.surface2, "tema surface2"), ink = a(target.ink, "tema ink"),
+        ink2 = a(target.ink2, "tema ink2"), accent = a(target.accent, "tema accent"),
+        onAccent = a(target.onAccent, "tema onAccent"), line = a(target.line, "tema line"),
+        dark = target.dark,
+    )
 }
 
-@Composable
-private fun ThemePreview(colors: ColorScheme) {
-    // This is a decorative miniature; the enclosing radio row provides the accessible label.
-    Row(Modifier.fillMaxWidth().clearAndSetSemantics { }.clip(RoundedCornerShape(12.dp))
-        .background(colors.background).padding(12.dp), verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Box(Modifier.size(38.dp, 52.dp).clip(RoundedCornerShape(6.dp)).background(colors.secondaryContainer),
-            contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.Headphones, null, tint = colors.secondary, modifier = Modifier.size(20.dp))
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Sottovoce", color = colors.onBackground, fontFamily = FontFamily.Serif,
-                style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                listOf(colors.primary, colors.secondary, colors.tertiary).forEach { color ->
-                    Box(Modifier.size(9.dp).background(color, CircleShape))
-                }
-            }
-            Box(Modifier.fillMaxWidth().height(4.dp).background(colors.surfaceVariant, CircleShape)) {
-                Box(Modifier.fillMaxWidth(.55f).height(4.dp).background(colors.tertiary, CircleShape))
-            }
-        }
-        Box(Modifier.size(32.dp).background(colors.primary, CircleShape), contentAlignment = Alignment.Center) {
-            Icon(Icons.Default.PlayArrow, null, tint = colors.onPrimary, modifier = Modifier.size(20.dp))
-        }
-    }
+internal object SvFonts {
+    val Display = FontFamily(Font(R.font.bricolage_display_bold, FontWeight.Bold))
+    val Wordmark = FontFamily(Font(R.font.bricolage_display_extrabold, FontWeight.ExtraBold))
+    val DisplayList = FontFamily(Font(R.font.bricolage_display_list, FontWeight.SemiBold))
+    val Ui = FontFamily(
+        Font(R.font.geist_regular, FontWeight.Normal),
+        Font(R.font.geist_medium, FontWeight.Medium),
+        Font(R.font.geist_semibold, FontWeight.SemiBold),
+    )
+    val Mono = FontFamily(
+        Font(R.font.geist_mono_regular, FontWeight.Normal),
+        Font(R.font.geist_mono_medium, FontWeight.Medium),
+    )
+}
+
+private val TightLines = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+
+internal object SvType {
+    fun display(size: TextUnit, lineHeight: Float = .9f, family: FontFamily = SvFonts.Display) = TextStyle(
+        fontFamily = family, fontSize = size, letterSpacing = (-0.03).em,
+        lineHeight = (size.value * lineHeight).sp, lineHeightStyle = TightLines,
+    )
+    val Wordmark = display(27.sp, 1f, SvFonts.Wordmark)
+    val ListTitle = TextStyle(fontFamily = SvFonts.DisplayList, fontSize = 22.sp, letterSpacing = (-0.02).em,
+        lineHeight = 21.sp, lineHeightStyle = TightLines)
+    val Body = TextStyle(fontFamily = SvFonts.Ui, fontSize = 15.sp, lineHeight = 21.sp)
+    val BodySmall = TextStyle(fontFamily = SvFonts.Ui, fontSize = 14.sp, lineHeight = 20.sp)
+    val Meta = TextStyle(fontFamily = SvFonts.Ui, fontSize = 13.sp, lineHeight = 17.sp)
+    val MetaSmall = TextStyle(fontFamily = SvFonts.Ui, fontSize = 12.sp, lineHeight = 16.sp)
+    val Label = TextStyle(fontFamily = SvFonts.Ui, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, lineHeight = 18.sp)
+    val Eyebrow = TextStyle(fontFamily = SvFonts.Ui, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+        letterSpacing = .13.em, lineHeight = 14.sp)
+    val EyebrowSmall = Eyebrow.copy(fontSize = 10.sp)
+    val Mono = TextStyle(fontFamily = SvFonts.Mono, fontSize = 12.sp, lineHeight = 16.sp)
+    val MonoSmall = Mono.copy(fontSize = 11.sp)
 }
