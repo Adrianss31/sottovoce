@@ -354,7 +354,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             finally { updateInProgress = false }
         }
     }
-    fun changeTheme(value: String) { theme = value; prefs.edit().putString("theme", value).apply() }
+    fun changeTheme(value: String) {
+        require(AppTheme.fromId(value) != null)
+        theme = value; prefs.edit().putString("theme", value).apply()
+    }
     fun setSkips(back: Int, forward: Int) {
         skipBack = back; skipForward = forward
         prefs.edit().putInt("skipBack", back).putInt("skipForward", forward).apply()

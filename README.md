@@ -91,6 +91,10 @@ Il backup include i dati di ascolto e le preferenze, **non gli audio, le coperti
 
 Nessuna telemetria, analisi, sincronizzazione cloud o credenziale GitHub nell’app. Un controllo aggiornamenti contatta GitHub, che può vedere i normali dati di connessione, come l’indirizzo IP. Leggi [la progettazione tecnica](docs/ARCHITECTURE.md) per archiviazione, permessi e modello di verifica.
 
+## Temi
+
+In **Impostazioni → Aspetto** puoi scegliere Carta (avorio e terracotta), Grafite (carbone e lavanda), Nord (ardesia e ghiaccio), Crepuscolo (prugna e pesca) e Petrolio (blu profondo e oro). Le anteprime mostrano superfici e accenti di ciascuna palette; la scelta si applica subito, resta al riavvio ed è inclusa nei backup. Sono disponibili anche i temi classici Chiaro e Scuro e la modalità Come il sistema.
+
 ## Compilazione
 
 JDK 17, Android SDK 36, Build Tools 35.0.0; Gradle Wrapper 8.13 incluso e verificato con checksum. AGP 8.13.2, Kotlin 2.1.20, Jetpack Compose e Media3.

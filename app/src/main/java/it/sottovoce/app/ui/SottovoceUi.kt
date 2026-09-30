@@ -14,6 +14,8 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.PredictiveBackHandler
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
@@ -55,6 +57,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -91,16 +94,6 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import kotlin.math.roundToInt
 
-private val LightColors = lightColorScheme(primary = Color(0xFF234D38), onPrimary = Color(0xFFFFFBF4),
-    background = Color(0xFFF8F5EE), surface = Color(0xFFF8F5EE), onSurface = Color(0xFF17231C),
-    primaryContainer = Color(0xFFE7EDE2), onPrimaryContainer = Color(0xFF173725),
-    secondaryContainer = Color(0xFFF1EAF7), onSecondaryContainer = Color(0xFF342B3A),
-    surfaceVariant = Color(0xFFF0ECE3), onSurfaceVariant = Color(0xFF6E716C))
-private val DarkColors = darkColorScheme(primary = Color(0xFFB1D2A5), onPrimary = Color(0xFF1B321C),
-    background = Color(0xFF1D211E), surface = Color(0xFF1D211E), onSurface = Color(0xFFF3EFE5),
-    primaryContainer = Color(0xFF354531), onPrimaryContainer = Color(0xFFE2EADC),
-    surfaceVariant = Color(0xFF292E29), onSurfaceVariant = Color(0xFFB6BCAE))
-
 private object SottovoceDesign {
     val Card = RoundedCornerShape(28.dp)
     val Soft = RoundedCornerShape(20.dp)
@@ -122,7 +115,17 @@ private val SottovoceTypography = Typography(
     val books by vm.library.books.collectAsStateWithLifecycle()
     val bookmarks by vm.library.bookmarks.collectAsStateWithLifecycle()
     val timer by PlaybackSignals.timer.collectAsStateWithLifecycle()
-    val dark = when (vm.theme) { "dark" -> true; "light" -> false; else -> isSystemInDarkTheme() }
+    val resolvedTheme = AppTheme.resolve(vm.theme, isSystemInDarkTheme())
+    val colors = remember(resolvedTheme) { themeColors(resolvedTheme) }
+    DisposableEffect(context, resolvedTheme) {
+        (context as? androidx.activity.ComponentActivity)?.enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.auto(android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT) { resolvedTheme.dark },
+            navigationBarStyle = SystemBarStyle.auto(colors.surface.toArgb(),
+                colors.surface.toArgb()) { resolvedTheme.dark },
+        )
+        onDispose { }
+    }
     var dialog by rememberSaveable { mutableStateOf<String?>(null) }
     var reorderId by rememberSaveable { mutableStateOf<String?>(null) }
     val backStack = rememberSaveable(saver = listSaver(
@@ -221,7 +224,7 @@ private val SottovoceTypography = Typography(
         if (reset && result == SnackbarResult.ActionPerformed) vm.undoReset()
     } }
     ProvideSottovoceMotion {
-    MaterialTheme(colorScheme = if (dark) DarkColors else LightColors, typography = SottovoceTypography) {
+    MaterialTheme(colorScheme = colors, typography = SottovoceTypography) {
     SharedTransitionLayout {
     CompositionLocalProvider(LocalSharedTransitionScope provides this@SharedTransitionLayout) {
         Scaffold(
@@ -334,7 +337,7 @@ private val SottovoceTypography = Typography(
             "speed" -> if (book != null) ChoiceDialog("Velocità di ascolto", listOf(.5f,.75f,1f,1.1f,1.25f,1.5f,1.75f,2f,2.5f,3f).map { it.toString()+"×" to it }, if (vm.now.bookId == book.id) vm.now.speed else book.speed, { dialog = null }) { vm.speed(book, it); dialog = null }
             "timer" -> TimerDialog({ dialog = null }) { vm.timerForBook(it); dialog = null }
             "nightDuration" -> ChoiceDialog("Durata del timer notturno", listOf(15,20,30,45,60,90).map { "$it minuti" to it }, vm.nightTimerDuration, { dialog = null }) { vm.changeNightTimerDuration(it); dialog = null }
-            "theme" -> ChoiceDialog("Aspetto", listOf("Come il sistema" to "system","Chiaro" to "light","Scuro" to "dark"), vm.theme, { dialog = null }) { vm.changeTheme(it); dialog = null }
+            "theme" -> ThemePicker(vm.theme, { dialog = null }) { vm.changeTheme(it); dialog = null }
             "skips" -> ChoiceDialog("Salti del lettore", listOf("Indietro 10 s · avanti 10 s" to (10 to 10),"Indietro 15 s · avanti 30 s" to (15 to 30),"Indietro 30 s · avanti 30 s" to (30 to 30),"Indietro 60 s · avanti 60 s" to (60 to 60)), vm.skipBack to vm.skipForward, { dialog = null }) { vm.setSkips(it.first,it.second); dialog = null }
             "bookmark" -> NoteDialog({ dialog = null }) { vm.addBookmark(it); dialog = null }
             "remove", "copies" -> if (book != null) AlertDialog(onDismissRequest = { dialog = null }, title = { Text(if (dialog == "copies") "Eliminare le copie nell’app?" else "Rimuovere il libro?") },
@@ -1310,7 +1313,7 @@ private fun Long?.orZero(): Long = this ?: 0L
                 Text("Impostazioni",style=MaterialTheme.typography.headlineLarge)
             }
         } }
-        item {SettingRow("Aspetto",when(vm.theme){"dark"->"Scuro";"light"->"Chiaro";else->"Come il sistema"},Icons.Default.Palette,onTheme)}
+        item {SettingRow("Aspetto", AppTheme.fromId(vm.theme)?.title ?: AppTheme.SYSTEM.title,Icons.Default.Palette,onTheme)}
         item {SettingRow("Salti del lettore","Indietro ${vm.skipBack} s · avanti ${vm.skipForward} s",Icons.Default.Replay,onSkips)}
         item {Text("Ascolto",style=MaterialTheme.typography.titleLarge)}
         item {SwitchSettingRow("Ripresa intelligente","Torna indietro in base alla durata della pausa.",Icons.Default.History,vm.smartRewind,vm::changeSmartRewind)}

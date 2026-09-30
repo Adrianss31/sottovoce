@@ -113,16 +113,16 @@ jobs:
           import tempfile
           import time
           import urllib.request
-          
+
           repo = os.environ['GITHUB_REPOSITORY']
           commit = os.environ['GITHUB_SHA']
           assert repo == 'Adrianss31/sottovoce'
           apksigner = Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0/apksigner'
           expected_cert = '871fc3e7e7972bfa6e8643ae274b30126fb0dc3a9b6abfcbe8340203d5a37855'
-          
+
           def run(args):
               return subprocess.run([str(arg) for arg in args], check=True, capture_output=True).stdout
-          
+
           with tempfile.TemporaryDirectory(prefix='sottovoce-', dir=os.environ['RUNNER_TEMP']) as temp:
               temp = Path(temp)
               keys = {

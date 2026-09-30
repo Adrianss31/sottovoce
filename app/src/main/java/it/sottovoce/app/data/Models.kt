@@ -184,7 +184,7 @@ fun Book.chapterPlaybackStart(index: Int = trackIndex, position: Long = position
 fun validateBackup(backup: Backup): Backup {
     require(backup.format == "sottovoce" && backup.version in 1..2) { "Formato di backup non supportato." }
     require(backup.books.size <= 2000 && backup.bookmarks.size <= 50_000) { "Backup troppo grande." }
-    require(backup.preferences.theme in setOf("system", "light", "dark"))
+    require(AppTheme.fromId(backup.preferences.theme) != null) { "Tema del backup non supportato." }
     require(backup.preferences.skipBack in 5..120 && backup.preferences.skipForward in 5..120)
     require(backup.preferences.nightTimerStartMinutes in 0 until 24 * 60)
     require(backup.preferences.nightTimerDuration in 5..180)

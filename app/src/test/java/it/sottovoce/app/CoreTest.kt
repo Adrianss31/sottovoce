@@ -16,6 +16,24 @@ import java.time.LocalDate
 import java.util.Base64
 
 class CoreTest {
+    @Test fun namedThemesSurviveBackupRestore() {
+        listOf("paper", "graphite", "nord", "dusk", "petrol").forEach { theme ->
+            val backup = Backup(books = emptyList(), bookmarks = emptyList(), preferences = Preferences(theme = theme))
+            val restored = validateBackup(AppJson.decodeFromString<Backup>(AppJson.encodeToString(backup)))
+            assertEquals(theme, restored.preferences.theme)
+        }
+    }
+
+    @Test fun legacyThemesRemainCompatibleAndUnknownThemesAreRejected() {
+        listOf("system", "light", "dark").forEach { theme ->
+            val backup = Backup(books = emptyList(), bookmarks = emptyList(), preferences = Preferences(theme = theme))
+            assertEquals(theme, validateBackup(backup).preferences.theme)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validateBackup(Backup(books = emptyList(), bookmarks = emptyList(), preferences = Preferences(theme = "missing")))
+        }
+    }
+
     @Test fun chapterNormalizationPreservesIntroAndRemovesEmptySegments() {
         val track = AudioTrack(uri = "", name = "Audio", durationMs = 30_000,
             chapters = listOf(Chapter("First", 12_500), Chapter("Duplicate", 12_500), Chapter("Invalid", 40_000)))

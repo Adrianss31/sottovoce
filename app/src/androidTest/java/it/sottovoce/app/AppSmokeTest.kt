@@ -21,6 +21,7 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.SessionCommand
@@ -118,6 +119,33 @@ class AppSmokeTest {
         }
         future?.get(10, TimeUnit.SECONDS)
     }
+    @Test fun themesAreSelectableAndPersistAfterActivityRecreation() {
+        compose.onNodeWithContentDescription("Impostazioni").performClick()
+        compose.onNodeWithText("Aspetto").performClick()
+        compose.onNodeWithTag("theme_options").performScrollToNode(hasText("Nord"))
+        compose.onNodeWithText("Nord").performClick()
+        compose.runOnIdle {
+            assertEquals("nord", vm.theme)
+            assertEquals("nord", context.getSharedPreferences("preferences", 0).getString("theme", null))
+            val store = ViewModelStore()
+            try {
+                val fresh = ViewModelProvider(store, ViewModelProvider.AndroidViewModelFactory.getInstance(app))[LibraryViewModel::class.java]
+                assertEquals("nord", fresh.theme)
+            } finally { store.clear() }
+        }
+        screenshot("theme-nord-settings")
+        compose.activityRule.scenario.recreate()
+        compose.waitForIdle()
+        compose.runOnIdle { assertEquals("nord", vm.theme) }
+        compose.runOnIdle { vm.screen = "settings" }
+        compose.onNodeWithText("Aspetto").performClick()
+        screenshot("theme-picker")
+        compose.onNodeWithTag("theme_options").performScrollToNode(hasText("Carta"))
+        compose.onNodeWithText("Carta").performClick()
+        compose.runOnIdle { assertEquals("paper", vm.theme) }
+        screenshot("theme-paper-settings")
+    }
+
     @Suppress("DEPRECATION")
     @Test fun playingServicePublishesForegroundMediaNotificationWithSystemControls() {
         val book = seed()
