@@ -24,7 +24,26 @@ jobs:
       - name: Installa piattaforma Android
         run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager 'platforms;android-36' 'build-tools;35.0.0'
       - name: Compila APK e verifica
-        run: ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --no-daemon
+        run: |
+          set -o pipefail
+          ./gradlew testDebugUnitTest lintDebug assembleDebug assembleRelease assembleDebugAndroidTest --no-daemon 2>&1 | tee gradle-build.log
+      - name: Riassumi gli errori
+        if: failure()
+        shell: python
+        run: |
+          import glob, re
+          from pathlib import Path
+          lines = Path('gradle-build.log').read_text(errors='replace').splitlines() if Path('gradle-build.log').exists() else []
+          picked = []
+          for i, line in enumerate(lines):
+              if re.match(r'^(e: |\* What went wrong|FAILURE|.*FAILED$|.*Error:)', line) or 'error:' in line:
+                  picked.extend(lines[i:i + 3] if 'went wrong' in line else [line])
+          for xml in glob.glob('app/build/test-results/**/*.xml', recursive=True):
+              for m in re.finditer(r'<testcase name="([^"]+)"[^>]*>\s*<failure message="([^"]*)"', Path(xml).read_text(errors='replace')):
+                  picked.append('TEST ' + m[1] + ': ' + m[2][:500])
+          text = '\n'.join(dict.fromkeys(picked))[:60000] or 'Nessun errore riconosciuto nel log.'
+          print(text)
+          print('::error title=Errori di compilazione::' + text.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
       - name: Conserva APK e rapporti
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -63,7 +82,25 @@ jobs:
           profile: pixel_6
           disable-animations: false
           script: |
-            ./gradlew connectedDebugAndroidTest --no-daemon
+            ./gradlew connectedDebugAndroidTest --no-daemon > emulator-tests.log 2>&1 || (tail -c 30000 emulator-tests.log; exit 1)
+      - name: Riassumi i test falliti
+        if: failure()
+        shell: python
+        run: |
+          import glob, re
+          from pathlib import Path
+          picked = []
+          for xml in glob.glob('app/build/outputs/androidTest-results/**/*.xml', recursive=True):
+              for m in re.finditer(r'<testcase name="([^"]+)"[^>]*>\s*<failure[^>]*>([^<]{0,1500})', Path(xml).read_text(errors='replace')):
+                  picked.append('TEST ' + m[1] + ': ' + m[2].replace('&#10;', ' ').strip())
+          log = Path('emulator-tests.log')
+          if log.exists():
+              for line in log.read_text(errors='replace').splitlines():
+                  if re.match(r'^(e: |\* What went wrong|FAILURE)', line) or ' FAILED' in line:
+                      picked.append(line)
+          text = '\n'.join(dict.fromkeys(picked))[:60000] or 'Nessun errore riconosciuto.'
+          print(text)
+          print('::error title=Test su emulatore::' + text.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
       - name: Conserva risultati e schermate
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
