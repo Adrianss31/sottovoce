@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Sign an APK built by Actions locally. Private keys never leave this computer."""
+"""Sign and verify a release APK using private key files outside the repository."""
 import argparse
 import base64
 import hashlib

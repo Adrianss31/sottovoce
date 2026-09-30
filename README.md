@@ -102,9 +102,9 @@ JDK 17, Android SDK 36, Build Tools 35.0.0; Gradle Wrapper 8.13 incluso e verifi
 
 Il secondo comando richiede un emulatore o dispositivo Android 13+ per la suite strumentale corrente. La compatibilità minima dichiarata dall’app resta Android 8.0.
 
-[GitHub Actions](.github/workflows/android.yml) compila ad ogni push/PR e su avvio manuale, esegue unit test e lint, poi prove su un emulatore Android 15. Gli artifact contengono APK, rapporti e schermate; sono conservati 30 giorni. L’APK release prodotto da Actions è **senza firma**, finché non viene firmato localmente per la pubblicazione.
+[GitHub Actions](.github/workflows/android.yml) compila ad ogni push/PR e su avvio manuale, esegue unit test e lint, poi prove su un emulatore Android 15. Gli artifact contengono APK, rapporti e schermate; sono conservati 30 giorni. L’APK della compilazione resta **senza firma** negli artifact. Dopo il successo delle prove, il job di rilascio firma e pubblica le nuove versioni su main, verificando il certificato originale e i file pubblici del canale di aggiornamento.
 
-La firma locale evita di trasferire le chiavi private a GitHub. Il repository contiene soltanto la chiave **pubblica** che verifica il descrittore degli aggiornamenti. Istruzioni per le prossime release in [RELEASING.md](docs/RELEASING.md).
+La firma usa le chiavi originali conservate nei Secrets privati di GitHub; il codice contiene soltanto la chiave **pubblica** che verifica il descrittore degli aggiornamenti. Resta disponibile anche la firma locale. Istruzioni per le prossime release in [RELEASING.md](docs/RELEASING.md).
 
 ## Evoluzioni possibili
 

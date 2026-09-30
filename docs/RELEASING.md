@@ -1,6 +1,33 @@
 # Pubblicare una release
 
-GitHub Actions compila e verifica. La firma avviene localmente: **non caricare chiavi private o password nel repository o negli artifact**. Custodisci una copia sicura del keystore, della sua password e della chiave privata del descrittore, separatamente dal progetto.
+GitHub Actions compila, verifica e firma usando le chiavi originali custodite nei Secrets privati del repository. **Non caricare chiavi private o password nel codice, negli artifact o nei log**. Conserva anche la copia locale del keystore, della password e della chiave privata del descrittore.
+
+## Rilascio dal cloud
+
+Il workflow `Android` esegue compilazione, unit test, lint e prove su emulatore. Solo dopo il successo di entrambi i job, su `main` e fuori dalle pull request, il job `release` scarica l'APK senza firma della stessa esecuzione, lo firma e verifica certificato originale, firme APK v2/v3, firma del descrittore e checksum.
+
+Per pubblicare un aggiornamento:
+
+1. Incrementa `versionCode` e `versionName` in `app/build.gradle.kts` e scrivi `docs/CHANGELOG-<versione>.md`.
+2. Pubblica le modifiche su `main`. Se la connessione della chat cloud nega la scrittura, i Secrets di firma non risolvono quel permesso: usa l'accesso GitHub autorizzato o pubblica il branch/PR dal flusso supportato dalla chat.
+3. Attendi tutti e tre i job del workflow. Una nuova versione con codice maggiore dell'ultima release viene caricata in bozza sul commit verificato. Il workflow confronta i file caricati, pubblica come `Latest` e scarica nuovamente i file pubblici per verificarne i checksum.
+4. Verifica sull'app il banner e l'installazione. Il successo delle Actions non dimostra l'installazione su un telefono fisico.
+
+Se versione e codice sono già pubblici, il job collauda comunque la firma e conserva la release esistente. Le release e i tag esistenti non vengono sovrascritti. Per ripetere il processo puoi avviare manualmente `Android` su `main`.
+
+Secrets configurati una sola volta:
+
+| Nome | Contenuto |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | Keystore originale PKCS12 codificato Base64 |
+| `ANDROID_KEYSTORE_PASSWORD` | Password originale del keystore |
+| `ANDROID_KEY_ALIAS` | Alias originale `sottovoce` |
+| `ANDROID_KEY_PASSWORD` | Password della chiave, uguale a quella del keystore originale |
+| `UPDATE_PRIVATE_KEY_PEM` | Chiave privata originale del descrittore |
+
+Le chiavi vengono ricostruite soltanto in una cartella temporanea privata del runner, rimossa al termine; non vengono conservate negli artifact. Non inserire questi valori nei messaggi della chat cloud. Il certificato APK atteso è `871fc3e7e7972bfa6e8643ae274b30126fb0dc3a9b6abfcbe8340203d5a37855`.
+
+## Firma locale alternativa
 
 1. Incrementa `versionCode` (sempre crescente) e `versionName` in `app/build.gradle.kts`. Aggiorna note e test, poi pubblica il commit su main.
 2. Attendi che entrambi i job del workflow Android riescano. Scarica l’artifact `sottovoce-build-<commit>` di quel commit. Usa il file `app-release-unsigned.apk`.
