@@ -1,6 +1,7 @@
 @file:OptIn(androidx.media3.common.util.UnstableApi::class)
 package it.sottovoce.app.ui
 
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
