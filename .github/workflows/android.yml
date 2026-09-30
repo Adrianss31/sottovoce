@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: android-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
     name: Compilazione, unit test e lint
@@ -74,3 +74,141 @@ jobs:
             app/build/outputs/androidTest-results/
             app/build/outputs/connected_android_test_additional_output/
           retention-days: 30
+  release:
+    name: Firma e pubblicazione aggiornamento
+    needs: [build, emulator]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Installa strumenti di firma Android
+        run: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager 'build-tools;35.0.0'
+      - name: Firma, verifica e pubblica una nuova versione
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          UPDATE_PRIVATE_KEY_PEM: ${{ secrets.UPDATE_PRIVATE_KEY_PEM }}
+        shell: python
+        run: |
+          import base64
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+          import tempfile
+          import time
+          import urllib.request
+          
+          repo = os.environ['GITHUB_REPOSITORY']
+          commit = os.environ['GITHUB_SHA']
+          assert repo == 'Adrianss31/sottovoce'
+          apksigner = Path(os.environ['ANDROID_HOME']) / 'build-tools/35.0.0/apksigner'
+          expected_cert = '871fc3e7e7972bfa6e8643ae274b30126fb0dc3a9b6abfcbe8340203d5a37855'
+          
+          def run(args):
+              return subprocess.run([str(arg) for arg in args], check=True, capture_output=True).stdout
+          
+          with tempfile.TemporaryDirectory(prefix='sottovoce-', dir=os.environ['RUNNER_TEMP']) as temp:
+              temp = Path(temp)
+              keys = {
+                  'release.p12': base64.b64decode(os.environ.pop('ANDROID_KEYSTORE_BASE64'), validate=True),
+                  'password.txt': os.environ.pop('ANDROID_KEYSTORE_PASSWORD').encode(),
+                  'update-private.pem': os.environ.pop('UPDATE_PRIVATE_KEY_PEM').encode(),
+              }
+              alias = os.environ.pop('ANDROID_KEY_ALIAS')
+              assert os.environ.pop('ANDROID_KEY_PASSWORD') == keys['password.txt'].decode(), 'Key password must match the original keystore password'
+              for name, data in keys.items():
+                  assert data, 'Missing signing secret'
+                  path = temp / name
+                  path.write_bytes(data)
+                  path.chmod(0o600)
+              del keys
+              artifact = temp / 'artifact'
+              run(['gh', 'run', 'download', os.environ['GITHUB_RUN_ID'], '--repo', repo,
+                   '--name', 'sottovoce-build-' + commit, '--dir', artifact])
+              candidates = list(artifact.rglob('app-release-unsigned.apk'))
+              assert len(candidates) == 1, 'Expected one unsigned release APK from this exact run'
+              metadata = run([apksigner.with_name('aapt'), 'dump', 'badging', candidates[0]]).decode()
+              package = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", metadata)
+              assert package and package[1] == 'it.sottovoce.app', 'Unexpected APK package'
+              code, version = int(package[2]), package[3]
+              assert re.fullmatch(r'[0-9]+\.[0-9]+\.[0-9]+', version), 'Unexpected release version'
+              notes = Path('docs') / ('CHANGELOG-' + version + '.md')
+              assert notes.is_file(), 'A changelog for this version is required'
+              output = temp / 'release'
+              run(['python3', 'scripts/sign_release.py', '--apk', candidates[0], '--apksigner', apksigner,
+                   '--keystore', temp / 'release.p12', '--password-file', temp / 'password.txt',
+                   '--alias', alias, '--update-key', temp / 'update-private.pem',
+                   '--version', version, '--code', code, '--notes-file', notes, '--output', output])
+              verification = (output / 'apk-verification.txt').read_text()
+              actual_cert = re.search(r'certificate SHA-256 digest: ([a-f0-9]+)', verification)
+              assert actual_cert and actual_cert[1] == expected_cert, 'Release signing identity changed'
+              assert re.search(r'Verified using v2 scheme.*: true', verification), 'APK v2 signature required'
+              assert re.search(r'Verified using v3 scheme.*: true', verification), 'APK v3 signature required'
+              print('Original APK certificate and signed update manifest verified for ' + version, flush=True)
+              if os.environ.get('VERIFY_ONLY') == 'true':
+                  print('Verification-only mode: no release creation, upload or publication.', flush=True)
+                  raise SystemExit(0)
+              apk_name = 'sottovoce-' + version + '.apk'
+              assets = [apk_name, 'update.json', 'SHA256SUMS']
+              expected_hashes = {name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in assets}
+              latest = json.loads(run(['gh', 'api', 'repos/' + repo + '/releases/latest']))
+              latest_manifest_asset = next(asset for asset in latest['assets'] if asset['name'] == 'update.json')
+              envelope = json.loads(run(['gh', 'api', latest_manifest_asset['url'], '-H', 'Accept: application/octet-stream']))
+              (temp / 'latest-payload').write_bytes(base64.b64decode(envelope['payload'], validate=True))
+              (temp / 'latest-signature').write_bytes(base64.b64decode(envelope['signature'], validate=True))
+              (temp / 'public.pem').write_bytes(run(['openssl', 'pkey', '-in', temp / 'update-private.pem', '-pubout']))
+              run(['openssl', 'dgst', '-sha256', '-verify', temp / 'public.pem', '-signature', temp / 'latest-signature', temp / 'latest-payload'])
+              latest_payload = json.loads((temp / 'latest-payload').read_bytes())
+              if latest_payload['versionName'] == version and latest_payload['versionCode'] == code:
+                  print('Version already public: signing verified, existing release kept intact.', flush=True)
+              else:
+                  assert code > latest_payload['versionCode'], 'Release versionCode must increase'
+                  tag = 'v' + version
+                  tag_result = subprocess.run(['gh', 'api', 'repos/' + repo + '/git/ref/tags/' + tag], capture_output=True)
+                  assert tag_result.returncode and b'404' in tag_result.stderr, 'Tag must not already exist; no releases are overwritten'
+                  run(['gh', 'release', 'create', tag, '--repo', repo, '--target', commit, '--draft',
+                       '--title', 'Sottovoce ' + version, '--notes-file', notes,
+                       *[output / name for name in assets]])
+                  draft = next(release for release in json.loads(run(['gh', 'api', 'repos/' + repo + '/releases'])) if release['tag_name'] == tag)
+                  assert draft['draft'] and draft['target_commitish'] == commit
+                  assert {asset['name'] for asset in draft['assets']} == set(assets)
+                  for asset in draft['assets']:
+                      assert asset['digest'] == 'sha256:' + expected_hashes[asset['name']], 'Uploaded asset digest mismatch'
+                  downloaded = temp / 'uploaded'
+                  downloaded.mkdir()
+                  for asset in draft['assets']:
+                      (downloaded / asset['name']).write_bytes(run(['gh', 'api', asset['url'], '-H', 'Accept: application/octet-stream']))
+                  for name, digest in expected_hashes.items():
+                      assert hashlib.sha256((downloaded / name).read_bytes()).hexdigest() == digest, 'Draft download mismatch'
+                  run(['gh', 'api', '--method', 'PATCH', 'repos/' + repo + '/releases/' + str(draft['id']), '-F', 'draft=false', '-f', 'make_latest=true'])
+                  for name, digest in expected_hashes.items():
+                      url = 'https://github.com/' + repo + '/releases/latest/download/' + name
+                      for attempt in range(6):
+                          try:
+                              with urllib.request.urlopen(url, timeout=60) as response:
+                                  actual = hashlib.sha256(response.read()).hexdigest()
+                              if actual == digest:
+                                  break
+                          except Exception:
+                              if attempt == 5:
+                                  raise
+                          if attempt == 5:
+                              raise RuntimeError('Public asset digest mismatch: ' + name)
+                          time.sleep(5)
+                  print('Published and verified: https://github.com/' + repo + '/releases/tag/' + tag, flush=True)
