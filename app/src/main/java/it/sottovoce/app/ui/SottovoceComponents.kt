@@ -34,7 +34,10 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.withFrameMillis
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -70,7 +73,7 @@ import kotlin.math.sin
 @Composable
 internal fun BookCover(book: Book, colors: BookColors, modifier: Modifier = Modifier, radius: Dp = 16.dp,
     showTitle: Boolean = true) {
-    val shape = RoundedCornerShape(radius)
+    val shape = svRounded(radius)
     BoxWithConstraints(modifier.clip(shape).background(colors.c1)) {
         val w = maxWidth
         val density = LocalDensity.current
@@ -93,7 +96,7 @@ internal fun BookCover(book: Book, colors: BookColors, modifier: Modifier = Modi
                 }
                 if (book.author.isNotBlank() && w >= 90.dp) Text(book.author.uppercase(), Modifier.padding(start = inset, top = inset, end = inset),
                     color = colors.c2, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(fontFamily = SvFonts.Ui, fontWeight = FontWeight.Medium, fontSize = authorSize, letterSpacing = .16.em))
+                    style = SvType.coverAuthor(authorSize))
                 Text(book.title, Modifier.align(Alignment.BottomStart).padding(start = inset, end = inset, bottom = inset * .8f),
                     color = colors.c2, maxLines = 4, overflow = TextOverflow.Ellipsis,
                     style = SvType.display(titleSize, .88f))
@@ -108,21 +111,51 @@ internal fun waveHeights(count: Int, seed: Int): List<Float> = List(count) { i -
     (v / 48.0).toFloat().coerceIn(.18f, 1f)
 }
 
+/**
+ * Decorative waveform. While [playing], bars breathe slowly and the ones under the
+ * playhead move like a voice; when paused the motion freezes where it is.
+ */
 @Composable
 internal fun Waveform(bars: Int, seed: Int, progress: Float, color: Color, modifier: Modifier = Modifier,
-    gap: Dp = 2.dp, radius: Dp = 2.dp, scaleY: Float = 1f) {
+    gap: Dp = 2.dp, radius: Dp = 2.dp, scaleY: Float = 1f, playing: Boolean = false) {
     val heights = remember(bars, seed) { waveHeights(bars, seed) }
+    val animate = LocalMotionPolicy.current.animationsEnabled
+    val clock = remember { mutableLongStateOf(0L) }
+    LaunchedEffect(playing, animate) {
+        if (!playing || !animate) return@LaunchedEffect
+        var last = withFrameMillis { it }
+        while (true) withFrameMillis { now -> clock.longValue += now - last; last = now }
+    }
     Canvas(modifier.clearAndSetSemantics { }) {
+        val t = clock.longValue / 1000f
+        val head = (progress * bars).toInt()
         val gapPx = gap.toPx()
         val barW = ((size.width - gapPx * (bars - 1)) / bars).coerceAtLeast(1f)
-        val r = CornerRadius(radius.toPx().coerceAtMost(barW / 2))
+        val r = CornerRadius(if (SvLook.style.sharp) 0f else radius.toPx().coerceAtMost(barW / 2))
         heights.forEachIndexed { i, h ->
-            val bh = (size.height * h * scaleY).coerceAtMost(size.height)
+            val motion = when {
+                !animate -> 1f
+                abs(i - head) <= 1 -> loopKeyframes(t + i * .21f, .8f + (i % 3) * .15f, VoiceFrames)
+                else -> loopKeyframes(t + (bars - i) * .13f, 3.2f, BreatheFrames)
+            }
+            val bh = (size.height * h * scaleY * motion).coerceAtMost(size.height)
             val played = (i + .5f) / bars < progress
             drawRoundRect(color.copy(alpha = color.alpha * if (played) 1f else .28f),
                 topLeft = Offset(i * (barW + gapPx), (size.height - bh) / 2f), size = Size(barW, bh), cornerRadius = r)
         }
     }
+}
+
+private val VoiceFrames = listOf(0f to 1f, .35f to .62f, .7f to 1.12f, 1f to 1f)
+private val BreatheFrames = listOf(0f to 1f, .5f to .8f, 1f to 1f)
+
+/** CSS-like keyframe loop with ease-in-out between stops. */
+private fun loopKeyframes(time: Float, period: Float, frames: List<Pair<Float, Float>>): Float {
+    val p = (time / period) % 1f
+    val i = frames.indexOfLast { it.first <= p }.coerceIn(0, frames.size - 2)
+    val (a, va) = frames[i]; val (b, vb) = frames[i + 1]
+    val x = ((p - a) / (b - a)).coerceIn(0f, 1f)
+    return va + (vb - va) * (x * x * (3 - 2 * x))
 }
 
 /** Three-bar equaliser; it moves only while playing. */
@@ -149,7 +182,7 @@ internal fun PlayMorphButton(playing: Boolean, size: Dp, container: Color, conte
     val policy = LocalMotionPolicy.current
     val radius by animateDpAsState(if (playing) playingRadius else size / 2, policy.overshoot(SvMotion.DurationPlayMorph), label = "forma play")
     val t by animateFloatAsState(if (playing) 1f else 0f, policy.emphasized(SvMotion.DurationPlayMorph), label = "icona play")
-    Box(modifier.size(size).clip(RoundedCornerShape(radius)).background(container)
+    Box(modifier.size(size).clip(svRounded(radius)).background(container)
         .semantics { contentDescription = if (playing) "Pausa" else "Riproduci" }
         .motionClickable(pressedScale = .92f, onClick = onClick), contentAlignment = Alignment.Center) {
         Icon(Icons.Rounded.PlayArrow, null, Modifier.size(iconSize).graphicsLayer {
@@ -183,8 +216,8 @@ internal fun SvSwitch(checked: Boolean, modifier: Modifier = Modifier) {
     val x by animateDpAsState(if (checked) 18.dp else 0.dp, policy.overshoot(420), label = "interruttore")
     val bg by androidx.compose.animation.animateColorAsState(if (checked) sv.accent else sv.surface2, label = "sfondo interruttore")
     val knob by androidx.compose.animation.animateColorAsState(if (checked) sv.onAccent else sv.ink2, label = "pomello")
-    Box(modifier.size(46.dp, 28.dp).clip(CircleShape).background(bg).padding(4.dp).clearAndSetSemantics { }) {
-        Box(Modifier.offset(x = x).size(20.dp).clip(CircleShape).background(knob))
+    Box(modifier.size(46.dp, 28.dp).clip(SvCircle).background(bg).padding(4.dp).clearAndSetSemantics { }) {
+        Box(Modifier.offset(x = x).size(20.dp).clip(SvCircle).background(knob))
     }
 }
 
@@ -192,8 +225,8 @@ internal fun SvSwitch(checked: Boolean, modifier: Modifier = Modifier) {
 internal fun IconCircle(icon: ImageVector, contentDescription: String?, size: Dp, tint: Color, modifier: Modifier = Modifier,
     background: Color = Color.Transparent, border: Color? = null, iconSize: Dp = size * .46f, pressedRotation: Float = 0f,
     enabled: Boolean = true, onClick: () -> Unit) {
-    Box(modifier.size(size).clip(CircleShape).background(background)
-        .then(if (border != null) Modifier.border(1.5.dp, border, CircleShape) else Modifier)
+    Box(modifier.size(size).clip(SvCircle).background(background)
+        .then(if (border != null) Modifier.border(1.5.dp, border, SvCircle) else Modifier)
         .motionClickable(enabled = enabled, pressedScale = .9f, pressedRotation = pressedRotation, onClickLabel = contentDescription, onClick = onClick)
         .semantics { if (contentDescription != null) this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center) {
@@ -204,8 +237,8 @@ internal fun IconCircle(icon: ImageVector, contentDescription: String?, size: Dp
 @Composable
 internal fun PillButton(text: String, background: Color, content: Color, modifier: Modifier = Modifier, height: Dp = 48.dp,
     border: Color? = null, icon: ImageVector? = null, style: TextStyle = SvType.Label, enabled: Boolean = true, onClick: () -> Unit) {
-    Row(modifier.height(height).clip(CircleShape).background(background)
-        .then(if (border != null) Modifier.border(1.5.dp, border, CircleShape) else Modifier)
+    Row(modifier.height(height).clip(SvCircle).background(background)
+        .then(if (border != null) Modifier.border(1.5.dp, border, SvCircle) else Modifier)
         .motionClickable(enabled = enabled, pressedScale = .97f, onClick = onClick)
         .graphicsLayer { alpha = if (enabled) 1f else .45f }
         .padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically,
@@ -220,7 +253,7 @@ internal fun PillButton(text: String, background: Color, content: Color, modifie
 internal fun ChapterMap(durations: List<Long>, fills: List<Float>, color: Color, modifier: Modifier = Modifier) {
     Row(modifier.height(6.dp), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
         durations.forEachIndexed { i, d ->
-            Box(Modifier.weight(d.coerceAtLeast(1).toFloat()).fillMaxHeight().clip(CircleShape).background(color.copy(alpha = .18f))) {
+            Box(Modifier.weight(d.coerceAtLeast(1).toFloat()).fillMaxHeight().clip(SvCircle).background(color.copy(alpha = .18f))) {
                 Box(Modifier.fillMaxHeight().fillMaxWidth(fills.getOrElse(i) { 0f }.coerceIn(0f, 1f)).background(color))
             }
         }
@@ -241,7 +274,7 @@ internal fun CrossfadeText(text: String, style: TextStyle, color: Color, modifie
 }
 
 internal fun Modifier.coverShadow(radius: Dp, elevation: Dp = 12.dp): Modifier =
-    this.shadow(elevation, RoundedCornerShape(radius), clip = false)
+    this.shadow(elevation, svRounded(radius), clip = false)
 
 /** Human duration like "6h 20m" / "42m". */
 internal fun dur(ms: Long): String {

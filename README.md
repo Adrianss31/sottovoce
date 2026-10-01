@@ -26,6 +26,10 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
 
+## Novità della 0.7.1
+
+Tema giorno e tema notte con cambio automatico (come il sistema, dal tramonto all’alba o dalle 22 alle 7), 20 temi con caratteri e texture propri, mappa e ricerca dei capitoli per i libri lunghi, forma d’onda animata e due correzioni al lettore. Dettagli in [CHANGELOG-0.7.1.md](docs/CHANGELOG-0.7.1.md).
+
 ## Novità della 0.7.0
 
 Redesign completo: nuova home con scheda “In ascolto” e pillola fluttuante, lettore a tutto schermo con i colori del libro e forma d’onda, copertine che volano dalla libreria al lettore, fogli per velocità, timer e segnalibri, nuova tipografia (Bricolage Grotesque e Geist, SIL OFL). Dettagli in [CHANGELOG-0.7.0.md](docs/CHANGELOG-0.7.0.md).
@@ -97,7 +101,7 @@ Nessuna telemetria, analisi, sincronizzazione cloud o credenziale GitHub nell’
 
 ## Temi
 
-In **Impostazioni → Aspetto** puoi scegliere Carta (avorio e terracotta), Grafite (carbone e lavanda), Nord (ardesia e ghiaccio), Crepuscolo (prugna e pesca) e Petrolio (blu profondo e oro). Le anteprime mostrano superfici e accenti di ciascuna palette; la scelta si applica subito, resta al riavvio ed è inclusa nei backup. Sono disponibili anche i temi classici Chiaro e Scuro e la modalità Come il sistema.
+In **Impostazioni → Aspetto** scegli un tema per il giorno (Carta, Crema, Matcha, Sorbetto, Porcellana, Erbario, Svizzero, Gazzetta, Risografia, Quaderno) e uno per la notte (Bosco, Grafite, Nord, Crepuscolo, Petrolio, Vuoto, Velluto, Cianografia, Fosfori, Camera oscura). Con **Cambia tema di notte** l’app passa al tema notte quando il sistema è scuro, dal tramonto all’alba (orari stimati dal fuso orario, senza accedere alla posizione) o dalle 22:00 alle 07:00; senza cambio automatico, **Usa** sceglie quale dei due tenere. Le anteprime mostrano carattere, superfici, accento e texture; la scelta si applica subito, resta al riavvio ed è inclusa nei backup.
 
 ## Compilazione
 

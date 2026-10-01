@@ -126,7 +126,7 @@ class LibraryRepository(private val context: Context) {
     private fun preferences(): Preferences {
         val prefs = context.getSharedPreferences("preferences", Context.MODE_PRIVATE)
         return Preferences(
-            theme = prefs.getString("theme", "system") ?: "system",
+            theme = ThemeSettings.read(prefs).legacyId,
             skipBack = prefs.getInt("skipBack", 15),
             skipForward = prefs.getInt("skipForward", 30),
             smartRewind = prefs.getBoolean("smartRewind", true),
@@ -136,7 +136,7 @@ class LibraryRepository(private val context: Context) {
             timerFade = prefs.getBoolean("timerFade", true),
             timerShakeExtend = prefs.getBoolean("timerShakeExtend", false),
             libraryViewMode = prefs.getString("libraryViewMode", "grid") ?: "grid",
-        )
+        ).withThemeSettings(ThemeSettings.read(prefs))
     }
     suspend fun exportBackup(): Backup = withContext(Dispatchers.IO) { mutex.withLock {
         validateBackup(Backup(books = _books.value.map { b ->
@@ -216,8 +216,8 @@ class LibraryRepository(private val context: Context) {
             }) }
             database.setTransactionSuccessful()
         } finally { database.endTransaction() }
-        context.getSharedPreferences("preferences", Context.MODE_PRIVATE).edit()
-            .putString("theme", safe.preferences.theme).putInt("skipBack", safe.preferences.skipBack)
+        safe.preferences.themeSettings().write(context.getSharedPreferences("preferences", Context.MODE_PRIVATE).edit())
+            .putInt("skipBack", safe.preferences.skipBack)
             .putInt("skipForward", safe.preferences.skipForward)
             .putBoolean("smartRewind", safe.preferences.smartRewind)
             .putBoolean("nightTimerEnabled", safe.preferences.nightTimerEnabled)

@@ -103,6 +103,18 @@ private fun paletteKey(path: String?): PaletteKey? = path?.takeIf { it.isNotBlan
  */
 @Composable
 internal fun rememberBookColors(book: Book): BookColors {
+    // Some themes reprint every book in their own inks instead of the cover's colours.
+    SvLook.style.coverPalettes?.let { palettes -> return themedBookColors(book.id, palettes) }
+    return rememberCoverColors(book)
+}
+
+internal fun themedBookColors(seed: String, palettes: List<Triple<Long, Long, Long>>): BookColors {
+    val (c1, c2, c3) = palettes[stableHash(seed) % palettes.size]
+    return BookColors(Color(c1), Color(c2), Color(c3), hashedBookColors(seed).motif)
+}
+
+@Composable
+private fun rememberCoverColors(book: Book): BookColors {
     val fallback = hashedBookColors(book.id)
     val path = book.coverPath
     val colors by produceState(initialValue = path?.let { p -> PaletteCache.entries.firstOrNull { it.key.path == p }?.value } ?: fallback,

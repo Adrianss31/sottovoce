@@ -55,7 +55,7 @@ class AppSmokeTest {
         future?.get(10,TimeUnit.SECONDS)
         runBlocking {app.library.load();app.library.books.value.toList().forEach{app.library.removeBook(it.id)}}
         compose.runOnIdle{
-            vm.screen="library";vm.message=null;vm.changeTheme("light");vm.setSkips(15,30)
+            vm.screen="library";vm.message=null;vm.changeTheme("light");vm.changeTheme("dark");vm.changeThemeAuto(true);vm.changeTheme("light");vm.setSkips(15,30)
             vm.changeSmartRewind(true);vm.changeNightTimerEnabled(false);vm.changeTimerFade(true);vm.changeTimerShakeExtend(false);vm.changeLibraryViewMode("grid")
             vm.playerOpen=false;vm.selectedId=null;vm.importDone=null
         }
@@ -141,8 +141,32 @@ class AppSmokeTest {
         compose.onNodeWithTag("theme_options").performScrollTo()
         screenshot("theme-picker")
         compose.onNodeWithText("Carta").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals("paper", vm.theme) }
+        compose.runOnIdle { assertEquals("paper", vm.theme); assertEquals(AppTheme.NORD, vm.themeSettings.night) }
         screenshot("theme-paper-settings")
+        // With automatic switching off, "Usa" moves to the night theme and keeps it.
+        compose.onNodeWithTag("theme_auto").performScrollTo().performClick()
+        compose.runOnIdle { assertFalse(vm.themeSettings.auto) }
+        compose.onNodeWithText("Usa").performScrollTo().performClick()
+        compose.runOnIdle { assertTrue(vm.themeSettings.manualNight); assertEquals("nord", vm.theme) }
+        screenshot("theme-night-manual")
+    }
+    @Test fun longBookShowsChapterMapAndSearchableList() {
+        val original = seed()
+        val book = original.copy(tracks = listOf(original.tracks.single().copy(
+            chapters = (1..60).map { Chapter("Capitolo $it", (it - 1) * 500L) })))
+        runBlocking { app.library.update(book.id) { book } }
+        compose.onNodeWithTag("library").performScrollToNode(hasTestTag("book_${book.id}"))
+        compose.onNodeWithTag("book_${book.id}").performClick()
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("chapter_grid"))
+        compose.onNodeWithTag("chapter_grid").assertIsDisplayed()
+        compose.onNodeWithTag("chapter_60").assertDoesNotExist()
+        screenshot("07-chapter-map")
+        compose.onNodeWithTag("book_detail").performScrollToNode(hasTestTag("find_chapters"))
+        compose.onNodeWithTag("find_chapters").performClick()
+        compose.onNodeWithTag("chapter_search").performTextInput("45")
+        screenshot("08-chapter-search")
+        compose.onNodeWithTag("sheet_chapter_45").performClick()
+        compose.waitUntil(10_000) { vm.now.playing && vm.now.position >= 22_000 }
     }
     @Suppress("DEPRECATION")
     @Test fun playingServicePublishesForegroundMediaNotificationWithSystemControls() {

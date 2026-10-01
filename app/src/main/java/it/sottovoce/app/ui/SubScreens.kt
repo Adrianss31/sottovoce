@@ -57,6 +57,24 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.DayOfWeek
 import java.time.LocalDate
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.em
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /** Shared frame for Series, Import, Stats and Settings: slides in from the right over the dimmed home. */
 @Composable
@@ -140,7 +158,7 @@ internal fun SeriesScreen(vm: LibraryViewModel, books: List<Book>, key: String?,
                 Text(name, style = SvType.display(36.sp), color = sv.ink)
                 entries.firstOrNull()?.author?.takeIf { it.isNotBlank() }?.let { Spacer(Modifier.height(6.dp)); Text(it, style = SvType.Body, color = sv.ink2) }
                 Spacer(Modifier.height(18.dp))
-                Box(Modifier.fillMaxWidth().height(6.dp).clip(CircleShape).background(sv.line)) {
+                Box(Modifier.fillMaxWidth().height(6.dp).clip(SvCircle).background(sv.line)) {
                     Box(Modifier.fillMaxHeight().fillMaxWidth(progress.coerceIn(0f, 1f)).background(sv.ink))
                 }
                 Spacer(Modifier.height(8.dp))
@@ -152,7 +170,7 @@ internal fun SeriesScreen(vm: LibraryViewModel, books: List<Book>, key: String?,
         itemsIndexed(entries, key = { _, b -> b.id }) { index, b ->
             val live = b.live(vm.now)
             val st = live.state()
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).testTag("book_${b.id}")
+            Row(Modifier.fillMaxWidth().clip(svRounded(26.dp)).testTag("book_${b.id}")
                 .motionClickable(pressedScale = .98f, onClickLabel = "Apri ${b.title}") { onOpenBook(b, "s-${b.id}") }
                 .padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(roman(b.seriesPosition ?: (index + 1)), Modifier.width(38.dp), style = SvType.display(22.sp), color = sv.ink2)
@@ -167,7 +185,7 @@ internal fun SeriesScreen(vm: LibraryViewModel, books: List<Book>, key: String?,
                         BookState.PROGRESS -> "${(live.progress * 100).toInt()}% · ${dur(listeningTime(b.durationMs - live.playedMs, live.speed))} rimasti"
                     } + if (activeId == b.id && playing) " · in ascolto" else "", style = SvType.Meta, color = sv.ink2, maxLines = 1)
                     Spacer(Modifier.height(8.dp))
-                    Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(sv.line)) {
+                    Box(Modifier.fillMaxWidth().height(3.dp).clip(SvCircle).background(sv.line)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(live.progress).background(sv.ink))
                     }
                 }
@@ -205,7 +223,7 @@ internal fun StatsScreen(vm: LibraryViewModel, books: List<Book>, active: Boolea
         }
         if (s == null) return@SubScaffold
         item {
-            Column(Modifier.padding(top = 24.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(sv.surface).padding(20.dp)) {
+            Column(Modifier.padding(top = 24.dp).fillMaxWidth().clip(svRounded(28.dp)).background(sv.surface).padding(20.dp)) {
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("Ultimi 7 giorni", style = SvType.Label, color = sv.ink)
                     Spacer(Modifier.weight(1f))
@@ -221,7 +239,7 @@ internal fun StatsScreen(vm: LibraryViewModel, books: List<Book>, active: Boolea
                                 modifier = Modifier.graphicsLayer { alpha = g })
                             Spacer(Modifier.height(4.dp))
                             Box(Modifier.fillMaxWidth().height((112f * d.durationMs / max * g).coerceAtLeast(3f).dp)
-                                .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)).background(if (i == s.days.lastIndex) sv.accent else sv.surface2))
+                                .clip(svRounded(topStart = 8.dp, topEnd = 8.dp)).background(if (i == s.days.lastIndex) sv.accent else sv.surface2))
                             Spacer(Modifier.height(6.dp))
                             Text(ItalianDays[LocalDate.ofEpochDay(d.day).dayOfWeek] ?: "", style = SvType.MonoSmall, color = sv.ink2)
                         }
@@ -237,7 +255,7 @@ internal fun StatsScreen(vm: LibraryViewModel, books: List<Book>, active: Boolea
             }
         }
         item {
-            Column(Modifier.padding(top = 10.dp).fillMaxWidth().clip(RoundedCornerShape(28.dp)).background(sv.surface).padding(20.dp),
+            Column(Modifier.padding(top = 10.dp).fillMaxWidth().clip(svRounded(28.dp)).background(sv.surface).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("Ultimi 6 mesi", style = SvType.Label, color = sv.ink)
                 val max = s.months.maxOfOrNull { it.durationMs }?.coerceAtLeast(1) ?: 1
@@ -247,7 +265,7 @@ internal fun StatsScreen(vm: LibraryViewModel, books: List<Book>, active: Boolea
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(month, Modifier.width(40.dp), style = SvType.MonoSmall, color = sv.ink2)
                         Box(Modifier.weight(1f).height(14.dp)) {
-                            Box(Modifier.fillMaxHeight().fillMaxWidth((m.durationMs.toFloat() / max * g).coerceIn(0f, 1f)).clip(CircleShape)
+                            Box(Modifier.fillMaxHeight().fillMaxWidth((m.durationMs.toFloat() / max * g).coerceIn(0f, 1f)).clip(SvCircle)
                                 .background(if (i == s.months.lastIndex) sv.accent else sv.ink2))
                         }
                         Text(if (m.durationMs > 0) "${m.durationMs / 3_600_000}h" else "—", Modifier.width(44.dp), style = SvType.MonoSmall,
@@ -283,7 +301,7 @@ internal fun StatsScreen(vm: LibraryViewModel, books: List<Book>, active: Boolea
 @Composable
 private fun StatTile(label: String, value: String, modifier: Modifier) {
     val sv = LocalSv.current
-    Column(modifier.fillMaxHeight().clip(RoundedCornerShape(24.dp)).background(sv.surface).padding(16.dp)) {
+    Column(modifier.fillMaxHeight().clip(svRounded(24.dp)).background(sv.surface).padding(16.dp)) {
         Eyebrow(label, sv.ink2, small = true)
         Spacer(Modifier.height(8.dp))
         Text(value, style = SvType.display(30.sp), color = sv.ink, maxLines = 1)
@@ -314,11 +332,11 @@ internal fun ImportScreen(vm: LibraryViewModel, books: List<Book>, onBack: () ->
             scanning -> item(key = "scan") {
                 Column {
                     ScreenTitle(null, "Leggo tracce e capitoli…", 44)
-                    Shimmer(Modifier.size(200.dp).clip(RoundedCornerShape(22.dp)))
+                    Shimmer(Modifier.size(200.dp).clip(svRounded(22.dp)))
                     Spacer(Modifier.height(16.dp))
-                    Shimmer(Modifier.fillMaxWidth(.7f).height(22.dp).clip(CircleShape))
+                    Shimmer(Modifier.fillMaxWidth(.7f).height(22.dp).clip(SvCircle))
                     Spacer(Modifier.height(10.dp))
-                    Shimmer(Modifier.fillMaxWidth(.45f).height(16.dp).clip(CircleShape))
+                    Shimmer(Modifier.fillMaxWidth(.45f).height(16.dp).clip(SvCircle))
                 }
             }
             preview -> importPreview(vm, relink)
@@ -341,9 +359,9 @@ internal fun ImportScreen(vm: LibraryViewModel, books: List<Book>, onBack: () ->
 @Composable
 private fun PickCard(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     val sv = LocalSv.current
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(sv.surface)
+    Row(Modifier.fillMaxWidth().clip(svRounded(24.dp)).background(sv.surface)
         .motionClickable(pressedScale = .97f, onClickLabel = title, onClick = onClick).padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(52.dp).clip(CircleShape).background(sv.accent), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(52.dp).clip(SvCircle).background(sv.accent), contentAlignment = Alignment.Center) {
             Icon(icon, null, Modifier.size(24.dp), tint = sv.onAccent)
         }
         Spacer(Modifier.width(16.dp))
@@ -380,7 +398,7 @@ private fun LazyListScope.importPreview(vm: LibraryViewModel, relink: Boolean) {
                     else "Riproduce i file dove si trovano ora. Non occupa altro spazio.", style = SvType.Meta, color = sv.ink2)
                 if (vm.candidates.any { it.tracks.size > 1 }) {
                     Spacer(Modifier.height(10.dp))
-                    Text("Ogni file è un libro separato", Modifier.clip(CircleShape).motionClickable(onClick = vm::splitCandidates)
+                    Text("Ogni file è un libro separato", Modifier.clip(SvCircle).motionClickable(onClick = vm::splitCandidates)
                         .padding(vertical = 8.dp), style = SvType.Label, color = sv.accent)
                 }
             } else Text("Scegli la stessa registrazione con lo stesso numero e ordine di file. Una lettura diversa potrebbe non corrispondere.",
@@ -423,13 +441,13 @@ private fun LazyListScope.importPreview(vm: LibraryViewModel, relink: Boolean) {
 private fun ImportModeSwitch(copy: Boolean, forced: Boolean, onChange: (Boolean) -> Unit) {
     val sv = LocalSv.current
     val policy = LocalMotionPolicy.current
-    BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp).clip(CircleShape).background(sv.surface).padding(4.dp)) {
+    BoxWithConstraints(Modifier.fillMaxWidth().height(48.dp).clip(SvCircle).background(sv.surface).padding(4.dp)) {
         val half = maxWidth / 2
         val x by androidx.compose.animation.core.animateDpAsState(if (copy) half else 0.dp, policy.emphasized(SvMotion.DurationIndicator), label = "modalità")
-        Box(Modifier.offset(x = x).width(half).fillMaxHeight().clip(CircleShape).background(sv.ink))
+        Box(Modifier.offset(x = x).width(half).fillMaxHeight().clip(SvCircle).background(sv.ink))
         Row(Modifier.fillMaxSize()) {
             listOf(false to "Collega gli originali", true to "Conserva una copia").forEach { (value, label) ->
-                Box(Modifier.weight(1f).fillMaxHeight().clip(CircleShape)
+                Box(Modifier.weight(1f).fillMaxHeight().clip(SvCircle)
                     .motionClickable(enabled = !forced || value, pressedScale = .97f, onClickLabel = label, role = Role.Tab) { onChange(value) }
                     .semantics { selected = copy == value }, contentAlignment = Alignment.Center) {
                     Text(label, style = SvType.Label.copy(fontSize = 13.sp), color = if (copy == value) sv.bg else sv.ink.copy(alpha = if (forced) .4f else 1f), maxLines = 1)
@@ -445,7 +463,7 @@ private fun ImportRunning(book: Book?, detail: String?) {
     val veil = remember { Animatable(1f) }
     LaunchedEffect(Unit) { veil.animateTo(.12f, tween(8000, easing = SvMotion.Emphasized)) }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(top = 30.dp)) {
-        if (book != null) Box(Modifier.size(220.dp).clip(RoundedCornerShape(22.dp))) {
+        if (book != null) Box(Modifier.size(220.dp).clip(svRounded(22.dp))) {
             BookCover(book, rememberBookColors(book), Modifier.fillMaxSize(), radius = 22.dp)
             Box(Modifier.fillMaxWidth().fillMaxHeight(veil.value).background(sv.bg.copy(alpha = .78f)))
         }
@@ -492,15 +510,43 @@ internal fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit, onExport: 
     SubScaffold(onBack, "settings_view") {
         item { ScreenTitle(null, "Impostazioni") }
         item { Eyebrow("Aspetto", sv.ink2) }
-        item(key = "themes") {
-            Column(Modifier.padding(top = 14.dp).testTag("theme_options"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                AppTheme.entries.chunked(4).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEach { theme -> ThemeCard(theme, vm.theme == theme.id, Modifier.weight(1f)) { vm.changeTheme(theme.id) } }
-                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+        item(key = "theme_auto") {
+            val ts = vm.themeSettings
+            val subtitle = if (!ts.auto) "Disattivato · resta il tema che scegli" else when (ts.schedule) {
+                ThemeSchedule.SYSTEM -> "Tema notte quando il sistema è scuro"
+                ThemeSchedule.FIXED -> "Tema notte dalle 22:00 alle 07:00"
+                ThemeSchedule.SUN -> SunTimes.of(LocalDate.now(), ZoneId.systemDefault())
+                    ?.let { (rise, set) -> "Tema notte dal tramonto all’alba · circa ${clockLabel(set)}–${clockLabel(rise)}" }
+                    ?: "Tema notte dal tramonto all’alba"
+            }
+            ToggleRow("Cambia tema di notte", subtitle, ts.auto, Modifier.padding(top = 6.dp).testTag("theme_auto")) { vm.changeThemeAuto(!ts.auto) }
+        }
+        if (vm.themeSettings.auto) item(key = "theme_schedule") {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                ThemeSchedule.entries.forEach { option ->
+                    val on = vm.themeSettings.schedule == option
+                    Box(Modifier.height(36.dp).clip(SvCircle).background(if (on) sv.ink else Color.Transparent)
+                        .border(1.5.dp, if (on) sv.ink else sv.line, SvCircle)
+                        .motionClickable(pressedScale = .95f, onClickLabel = option.title, role = Role.RadioButton) { vm.changeThemeSchedule(option) }
+                        .semantics { selected = on }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                        Text(option.title, style = SvType.MetaSmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Medium), color = if (on) sv.bg else sv.ink, maxLines = 1)
                     }
                 }
-                CrossfadeText(AppTheme.fromId(vm.theme)?.description ?: "", SvType.Meta, sv.ink2)
+            }
+        }
+        item(key = "themes") {
+            val ts = vm.themeSettings
+            val showingNight = vm.themePreviewNight ?: ts.isNight(isSystemInDarkTheme(), ZonedDateTime.now())
+            Column(Modifier.testTag("theme_options")) {
+                listOf(false, true).forEach { night ->
+                    ThemeSlotHeader(night, if (night) ts.night else ts.day, showing = showingNight == night, auto = ts.auto) { vm.showThemeSide(night) }
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        (if (night) AppTheme.nightThemes else AppTheme.dayThemes).forEach { theme ->
+                            ThemeCard(theme, theme == (if (night) ts.night else ts.day)) { vm.changeTheme(theme.id) }
+                        }
+                    }
+                }
             }
         }
         item { SectionTitle("Ascolto") }
@@ -558,7 +604,7 @@ internal fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit, onExport: 
         item { SettingLink("Elimina copie incomplete", "Pulisce copie interrotte a metà", vm::cleanIncompleteCopies) }
         item { SectionTitle("Informazioni") }
         item {
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(sv.surface).padding(20.dp)) {
+            Column(Modifier.fillMaxWidth().clip(svRounded(26.dp)).background(sv.surface).padding(20.dp)) {
                 Text("Sottovoce ${BuildConfig.VERSION_NAME}", style = SvType.display(28.sp), color = sv.ink)
                 Spacer(Modifier.height(6.dp))
                 if (BuildConfig.DEBUG) Text("Versione di sviluppo. Installa l’APK release per gli aggiornamenti firmati.", style = SvType.Meta, color = sv.ink2)
@@ -580,55 +626,96 @@ internal fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit, onExport: 
         }
         item {
             Text("Nessun account, pubblicità o tracciamento. Libreria e ascolto funzionano offline.", Modifier.padding(top = 18.dp), style = SvType.Meta, color = sv.ink2)
-            Text("Codice e istruzioni su GitHub", Modifier.padding(top = 8.dp).clip(CircleShape)
+            Text("Codice e istruzioni su GitHub", Modifier.padding(top = 8.dp).clip(SvCircle)
                 .motionClickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Adrianss31/sottovoce"))) }
                 .padding(vertical = 8.dp), style = SvType.Label, color = sv.accent)
         }
     }
 }
 
+private fun clockLabel(minutes: Int) = "%02d:%02d".format(minutes / 60, minutes % 60)
+
+/** "Giorno · Carta" with the in-use badge, or the button that shows that side. */
 @Composable
-private fun ThemeCard(theme: AppTheme, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun ThemeSlotHeader(night: Boolean, theme: AppTheme, showing: Boolean, auto: Boolean, onShow: () -> Unit) {
+    val sv = LocalSv.current
+    Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp).heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (night) Icons.Rounded.DarkMode else Icons.Rounded.LightMode, null, Modifier.size(18.dp), tint = sv.ink)
+        Spacer(Modifier.width(9.dp))
+        Text(buildAnnotatedString {
+            append(if (night) "Notte" else "Giorno")
+            withStyle(SpanStyle(fontSize = 13.sp, fontWeight = FontWeight.Normal, color = sv.ink2)) { append("  ${theme.title}") }
+        }, Modifier.weight(1f), style = SvType.Body.copy(fontWeight = FontWeight.Medium), color = sv.ink, maxLines = 1)
+        if (showing) Box(Modifier.height(26.dp).clip(svRounded(13.dp)).background(sv.accent).padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center) {
+            Text(if (auto) "VISIBILE" else "IN USO", style = SvType.EyebrowSmall.copy(fontWeight = FontWeight.Bold, letterSpacing = .1.em), color = sv.onAccent)
+        } else Box(Modifier.height(30.dp).clip(svRounded(15.dp)).border(1.5.dp, sv.line, svRounded(15.dp))
+            .motionClickable(pressedScale = .95f, onClickLabel = if (auto) "Anteprima del tema ${if (night) "notte" else "giorno"}" else "Usa ${theme.title}", onClick = onShow)
+            .padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+            Text(if (auto) "Anteprima" else "Usa", style = SvType.MetaSmall.copy(fontWeight = FontWeight.Medium), color = sv.ink)
+        }
+    }
+}
+
+/** A live miniature of a theme: its display face, surface, accent, ink and texture. */
+@Composable
+private fun ThemeCard(theme: AppTheme, selected: Boolean, onClick: () -> Unit) {
     val sv = LocalSv.current
     val policy = LocalMotionPolicy.current
-    val scale by animateFloatAsState(if (selected) 1f else .94f, policy.overshoot(420), label = "tema ${theme.id}")
-    val light = svPalette(AppTheme.LIGHT)
-    val dark = svPalette(AppTheme.DARK)
+    val scale by animateFloatAsState(if (selected) 1f else .95f, policy.overshoot(400), label = "tema ${theme.id}")
     val p = svPalette(theme)
-    Column(modifier.motionClickable(pressedScale = .92f, onClickLabel = theme.title, role = Role.RadioButton, onClick = onClick)
-        .semantics { this.selected = selected }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f).graphicsLayer { scaleX = scale; scaleY = scale }
-            .then(if (selected) Modifier.border(2.5.dp, sv.accent, RoundedCornerShape(16.dp)) else Modifier)
-            .padding(if (selected) 4.dp else 0.dp).clip(RoundedCornerShape(if (selected) 12.dp else 16.dp))
-            .background(if (theme == AppTheme.SYSTEM) Brush.linearGradient(0f to light.bg, .5f to light.bg, .5f to dark.bg, 1f to dark.bg)
-                else Brush.linearGradient(listOf(p.bg, p.bg)))
-            .clearAndSetSemantics { }) {
-            Column(Modifier.padding(8.dp)) {
-                Box(Modifier.fillMaxWidth().height(22.dp).clip(RoundedCornerShape(6.dp)).background(p.surface))
-                Spacer(Modifier.height(6.dp))
-                Box(Modifier.fillMaxWidth(.7f).height(5.dp).clip(CircleShape).background(p.ink))
-                Spacer(Modifier.height(4.dp))
-                Box(Modifier.fillMaxWidth(.45f).height(5.dp).clip(CircleShape).background(p.ink2))
+    val look = svStyle(theme)
+    val corner = if (look.sharp) 0.dp else 20.dp
+    Column(Modifier.width(112.dp).motionClickable(pressedScale = .93f, onClickLabel = theme.title, role = Role.RadioButton, onClick = onClick)
+        .semantics { this.selected = selected }) {
+        Box(Modifier.fillMaxWidth().height(148.dp).graphicsLayer { scaleX = scale; scaleY = scale }
+            .drawBehind {
+                if (selected) {
+                    val w = 2.5.dp.toPx()
+                    drawRoundRect(sv.accent, Offset(-w / 2, -w / 2), Size(size.width + w, size.height + w),
+                        CornerRadius(corner.toPx() + w / 2), style = Stroke(w))
+                }
             }
-            Box(Modifier.align(Alignment.BottomEnd).padding(8.dp).size(16.dp).clip(CircleShape).background(p.accent))
+            .clip(RoundedCornerShape(corner)).background(p.bg).border(1.dp, Color.Gray.copy(alpha = .25f), RoundedCornerShape(corner))
+            .clearAndSetSemantics { }) {
+            Text("Aa", Modifier.padding(start = 12.dp, top = 8.dp), color = p.ink, style = TextStyle(fontFamily = look.display, fontSize = 42.sp,
+                letterSpacing = look.displaySpacing.em, lineHeight = 46.sp,
+                shadow = look.glow?.let { Shadow(it, Offset.Zero, look.glowRadius.value * LocalDensity.current.density) }))
+            Row(Modifier.align(Alignment.BottomCenter).padding(10.dp).fillMaxWidth().height(46.dp)
+                .clip(RoundedCornerShape(if (look.sharp) 0.dp else 12.dp)).background(p.surface).padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(28.dp).clip(if (look.sharp) RectangleShape else CircleShape).background(p.accent))
+                Spacer(Modifier.width(7.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(p.ink))
+                    Box(Modifier.fillMaxWidth(.6f).height(3.dp).background(p.ink.copy(alpha = .45f)))
+                }
+            }
+            ThemeTexture(look.fx, look.fxAlpha, p.dark)
+            if (selected) Box(Modifier.align(Alignment.TopEnd).padding(8.dp).size(22.dp).clip(CircleShape).background(sv.accent),
+                contentAlignment = Alignment.Center) {
+                Icon(Icons.Rounded.Check, null, Modifier.size(13.dp), tint = sv.onAccent)
+            }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(theme.title, style = SvType.MetaSmall.copy(fontWeight = FontWeight.Medium), color = if (selected) sv.ink else sv.ink2,
-            maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(8.dp))
+        Text(theme.title, Modifier.padding(horizontal = 2.dp), style = SvType.Label.copy(fontSize = 13.sp),
+            color = if (selected) sv.ink else sv.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(theme.description, Modifier.padding(horizontal = 2.dp), style = SvType.MetaSmall.copy(fontSize = 11.sp, lineHeight = 14.sp),
+            color = sv.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 private fun ValueChip(label: String, modifier: Modifier, onClick: () -> Unit) {
     val sv = LocalSv.current
-    Box(modifier.height(44.dp).clip(CircleShape).background(sv.surface).motionClickable(pressedScale = .96f, onClickLabel = label, onClick = onClick),
+    Box(modifier.height(44.dp).clip(SvCircle).background(sv.surface).motionClickable(pressedScale = .96f, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center) { Text(label, style = SvType.Label, color = sv.ink) }
 }
 
 @Composable
 private fun SettingLink(title: String, subtitle: String?, onClick: () -> Unit) {
     val sv = LocalSv.current
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).motionClickable(pressedScale = .98f, onClickLabel = title, onClick = onClick)
+    Row(Modifier.fillMaxWidth().clip(svRounded(18.dp)).motionClickable(pressedScale = .98f, onClickLabel = title, onClick = onClick)
         .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, style = SvType.Label, color = sv.ink)

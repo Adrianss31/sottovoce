@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import java.time.ZonedDateTime
 import kotlin.math.roundToInt
 
 /** Bounds of every cover that can start or end the cover → player transition. */
@@ -89,7 +90,7 @@ internal fun Modifier.coverOrigin(key: String, radius: Dp): Modifier = composed 
 
 internal const val HeroKey = "hero"
 
-internal enum class Sheet { SPEED, SLEEP, MARK, MANAGE, EDIT, REMOVE, COPIES, RESTORE }
+internal enum class Sheet { SPEED, SLEEP, MARK, MANAGE, EDIT, REMOVE, COPIES, RESTORE, CHAPTERS }
 
 @UnstableApi
 @Composable
@@ -110,7 +111,20 @@ private fun SottovoceRoot(vm: LibraryViewModel) {
     val timerLabel by PlaybackSignals.timer.collectAsStateWithLifecycle()
     val timerRemaining by PlaybackSignals.timerRemainingMs.collectAsStateWithLifecycle()
     val timerTotal by PlaybackSignals.timerTotalMs.collectAsStateWithLifecycle()
-    val resolvedTheme = AppTheme.resolve(vm.theme, isSystemInDarkTheme())
+    // Day or night theme: by hand, with the system, from sunset to sunrise or 22:00–07:00.
+    val themeSettings = vm.themeSettings
+    var clock by remember { mutableStateOf(ZonedDateTime.now()) }
+    LaunchedEffect(themeSettings.auto, themeSettings.schedule) {
+        if (themeSettings.auto && themeSettings.schedule != ThemeSchedule.SYSTEM) while (true) {
+            clock = ZonedDateTime.now()
+            delay((60 - clock.second) * 1000L)
+        }
+    }
+    val night = vm.themePreviewNight?.takeIf { vm.screen == "settings" } ?: themeSettings.isNight(isSystemInDarkTheme(), clock)
+    val resolvedTheme = if (night) themeSettings.night else themeSettings.day
+    val style = remember(resolvedTheme) { svStyle(resolvedTheme) }
+    if (SvLook.style != style) SvLook.style = style
+    if (SvLook.density != density.density) SvLook.density = density.density
     val sv = animatedPalette(svPalette(resolvedTheme), policy.animationsEnabled)
     val origins = remember { CoverOrigins() }
     val flight = remember { CoverFlight() }
@@ -247,6 +261,7 @@ private fun SottovoceRoot(vm: LibraryViewModel) {
     fun closeSub() {
         if (vm.screen == "import") { vm.candidates = emptyList(); vm.relinkId = null; vm.importDone = null }
         vm.screen = "library"
+        vm.themePreviewNight = null
     }
 
     // The ViewModel may ask to show a book (e.g. a book that needs relinking).
@@ -355,6 +370,12 @@ private fun SottovoceRoot(vm: LibraryViewModel) {
                 Sheet.SPEED -> SpeedSheet(vm, sheetBook, active?.id == sheetBook.id)
                 Sheet.SLEEP -> SleepSheet(vm, sheetBook, timerLabel, timerRemaining, timerTotal,
                     onClose = { sheet = null }, play = { play(it) })
+                Sheet.CHAPTERS -> ChaptersSheet(sheetBook, if (active?.id == sheetBook.id) sheetBook.live(vm.now) else sheetBook,
+                    bookmarks.filter { it.bookId == sheetBook.id }) { c ->
+                    sheet = null
+                    if (active?.id == sheetBook.id) vm.playBook(sheetBook, c.trackIndex, c.startMs) else play(sheetBook, c.trackIndex, c.startMs)
+                    vm.message = "Capitolo ${c.ordinal}"
+                }
                 Sheet.MARK -> BookmarkSheet(vm, sheetBook, active?.id == sheetBook.id) { note ->
                     vm.addBookmark(sheetBook, note); sheet = null; playerTab = "bookmarks"
                 }
@@ -380,6 +401,7 @@ private fun SottovoceRoot(vm: LibraryViewModel) {
                 else -> {}
             }
         }
+        ThemeTexture(style.fx, style.fxAlpha, sv.dark)
         ToastHost(toast, onAction = { vm.undoReset() }, onDone = { toast = null })
         BusyOverlay(vm)
     }

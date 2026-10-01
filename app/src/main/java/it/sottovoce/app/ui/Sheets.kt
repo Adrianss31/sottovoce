@@ -15,6 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
@@ -40,12 +42,14 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.util.UnstableApi
 import it.sottovoce.app.LibraryViewModel
 import it.sottovoce.app.data.*
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /** Bottom sheet: theme surface, 30 dp top radius, grabber, 50% scrim; slides 105% → 0 over 550 ms. */
@@ -61,12 +65,12 @@ internal fun SheetHost(visible: Boolean, onDismiss: () -> Unit, content: @Compos
             .clickable(remember { MutableInteractionSource() }, indication = null, enabled = visible, onClickLabel = "Chiudi", onClick = onDismiss))
         Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
             .graphicsLayer { translationY = (1f - t) * size.height * 1.05f }
-            .clip(RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp)).background(sv.surface)
+            .clip(svRounded(topStart = 30.dp, topEnd = 30.dp)).background(sv.surface)
             .clickable(remember { MutableInteractionSource() }, indication = null) { }
             .navigationBarsPadding().imePadding()
             .heightIn(max = 760.dp).verticalScroll(rememberScrollState())
             .padding(start = 22.dp, end = 22.dp, bottom = 22.dp)) {
-            Box(Modifier.padding(vertical = 12.dp).align(Alignment.CenterHorizontally).size(40.dp, 5.dp).clip(CircleShape).background(sv.ink2.copy(alpha = .4f)))
+            Box(Modifier.padding(vertical = 12.dp).align(Alignment.CenterHorizontally).size(40.dp, 5.dp).clip(SvCircle).background(sv.ink2.copy(alpha = .4f)))
             content()
         }
     }
@@ -91,7 +95,7 @@ internal fun SpeedSheet(vm: LibraryViewModel, book: Book, active: Boolean) {
     Text(formatSpeed(value), Modifier.fillMaxWidth(), style = SvType.display(84.sp), color = sv.ink,
         textAlign = androidx.compose.ui.text.style.TextAlign.Center)
     Spacer(Modifier.height(18.dp))
-    BoxWithConstraints(Modifier.fillMaxWidth().height(44.dp).clip(CircleShape).background(sv.bg).testTag("speed_slider")
+    BoxWithConstraints(Modifier.fillMaxWidth().height(44.dp).clip(SvCircle).background(sv.bg).testTag("speed_slider")
         .semantics {
             progressBarRangeInfo = ProgressBarRangeInfo(value, .5f..3f, steps = 49)
             setProgress { v -> value = snap(v); vm.speed(book, value); true }
@@ -103,8 +107,8 @@ internal fun SpeedSheet(vm: LibraryViewModel, book: Book, active: Boolean) {
             }
         }) {
         val f = (value - .5f) / 2.5f
-        Box(Modifier.fillMaxHeight().width(44.dp + (maxWidth - 44.dp) * f).clip(CircleShape).background(sv.accent))
-        Box(Modifier.offset(x = (maxWidth - 44.dp) * f).size(44.dp).padding(6.dp).clip(CircleShape).background(sv.onAccent))
+        Box(Modifier.fillMaxHeight().width(44.dp + (maxWidth - 44.dp) * f).clip(SvCircle).background(sv.accent))
+        Box(Modifier.offset(x = (maxWidth - 44.dp) * f).size(44.dp).padding(6.dp).clip(SvCircle).background(sv.onAccent))
     }
     Spacer(Modifier.height(8.dp))
     Row { Text("0,5×", style = SvType.MonoSmall, color = sv.ink2); Spacer(Modifier.weight(1f)); Text("3×", style = SvType.MonoSmall, color = sv.ink2) }
@@ -112,7 +116,7 @@ internal fun SpeedSheet(vm: LibraryViewModel, book: Book, active: Boolean) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         listOf(.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { v ->
             val on = kotlin.math.abs(value - v) < .001f
-            Box(Modifier.weight(1f).height(44.dp).clip(CircleShape).background(if (on) sv.ink else sv.bg)
+            Box(Modifier.weight(1f).height(44.dp).clip(SvCircle).background(if (on) sv.ink else sv.bg)
                 .motionClickable(pressedScale = .92f, onClickLabel = formatSpeed(v)) { value = v; vm.speed(book, v) },
                 contentAlignment = Alignment.Center) {
                 Text(formatSpeed(v), style = SvType.Label.copy(fontSize = 13.sp), color = if (on) sv.bg else sv.ink, maxLines = 1)
@@ -133,7 +137,7 @@ internal fun SleepSheet(vm: LibraryViewModel, book: Book, timerLabel: String, re
         options.chunked(3).forEach { row ->
             Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 row.forEach { (minutes, unit) ->
-                    Column(Modifier.weight(1f).height(84.dp).clip(RoundedCornerShape(22.dp)).background(sv.bg)
+                    Column(Modifier.weight(1f).height(84.dp).clip(svRounded(22.dp)).background(sv.bg)
                         .testTag("timer_$minutes")
                         .motionClickable(pressedScale = .95f, onClickLabel = if (minutes < 0) "Fine capitolo" else "$minutes minuti") {
                             vm.startTimer(book, minutes, play)
@@ -178,7 +182,7 @@ internal fun SleepSheet(vm: LibraryViewModel, book: Book, timerLabel: String, re
 @Composable
 internal fun ToggleRow(title: String, subtitle: String?, checked: Boolean, modifier: Modifier = Modifier, onToggle: () -> Unit) {
     val sv = LocalSv.current
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
+    Row(modifier.fillMaxWidth().clip(svRounded(18.dp))
         .motionClickable(pressedScale = .98f, onClickLabel = title, role = androidx.compose.ui.semantics.Role.Switch, onClick = onToggle)
         .semantics { stateDescription = if (checked) "Attivo" else "Disattivo" }
         .padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -212,7 +216,7 @@ internal fun SvTextField(value: String, onValue: (String) -> Unit, placeholder: 
         textStyle = SvType.Body.copy(color = sv.ink), cursorBrush = SolidColor(sv.accent),
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         decorationBox = { inner ->
-            Box(Modifier.fillMaxWidth().heightIn(min = minHeight).clip(RoundedCornerShape(18.dp)).background(sv.bg)
+            Box(Modifier.fillMaxWidth().heightIn(min = minHeight).clip(svRounded(18.dp)).background(sv.bg)
                 .graphicsLayer { alpha = if (enabled) 1f else .5f }
                 .padding(horizontal = 16.dp, vertical = 15.dp)) {
                 if (value.isEmpty()) Text(placeholder, style = SvType.Body, color = sv.ink2)
@@ -224,9 +228,9 @@ internal fun SvTextField(value: String, onValue: (String) -> Unit, placeholder: 
 @Composable
 private fun ManageRow(icon: ImageVector, title: String, subtitle: String?, color: Color, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val sv = LocalSv.current
-    Row(modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).motionClickable(pressedScale = .98f, onClickLabel = title, onClick = onClick)
+    Row(modifier.fillMaxWidth().clip(svRounded(18.dp)).motionClickable(pressedScale = .98f, onClickLabel = title, onClick = onClick)
         .padding(vertical = 13.dp, horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(40.dp).clip(CircleShape).background(sv.bg), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(40.dp).clip(SvCircle).background(sv.bg), contentAlignment = Alignment.Center) {
             Icon(icon, null, Modifier.size(20.dp), tint = color)
         }
         Spacer(Modifier.width(14.dp))
@@ -329,13 +333,13 @@ internal fun ToastHost(toast: Toast?, onAction: () -> Unit, onDone: () -> Unit) 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
         Row(Modifier.navigationBarsPadding().padding(start = 24.dp, end = 24.dp, bottom = 108.dp)
             .graphicsLayer { alpha = t; translationY = (1f - t) * 80.dp.toPx() }
-            .clip(CircleShape).background(sv.ink).padding(start = 20.dp, end = if (current.action != null) 6.dp else 20.dp, top = 6.dp, bottom = 6.dp)
+            .clip(SvCircle).background(sv.ink).padding(start = 20.dp, end = if (current.action != null) 6.dp else 20.dp, top = 6.dp, bottom = 6.dp)
             .heightIn(min = 40.dp).testTag("toast"), verticalAlignment = Alignment.CenterVertically) {
             Text(current.text, Modifier.weight(1f, fill = false).padding(vertical = 8.dp), style = SvType.BodySmall, color = sv.bg,
                 maxLines = 3, overflow = TextOverflow.Ellipsis)
             current.action?.let { label ->
                 Spacer(Modifier.width(8.dp))
-                Text(label, Modifier.clip(CircleShape).motionClickable { visible = false; onAction() }.padding(horizontal = 14.dp, vertical = 10.dp),
+                Text(label, Modifier.clip(SvCircle).motionClickable { visible = false; onAction() }.padding(horizontal = 14.dp, vertical = 10.dp),
                     style = SvType.Label, color = sv.accent)
             }
         }
@@ -354,7 +358,7 @@ internal fun BusyOverlay(vm: LibraryViewModel) {
     if (!show || label == null) return
     Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .45f))
         .clickable(remember { MutableInteractionSource() }, indication = null) { }, contentAlignment = Alignment.Center) {
-        Column(Modifier.padding(32.dp).fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(sv.surface).padding(24.dp)) {
+        Column(Modifier.padding(32.dp).fillMaxWidth().clip(svRounded(30.dp)).background(sv.surface).padding(24.dp)) {
             Text(label, style = SvType.display(28.sp), color = sv.ink)
             Spacer(Modifier.height(14.dp))
             IndeterminateBar(sv.accent, sv.line)
@@ -371,7 +375,112 @@ internal fun IndeterminateBar(color: Color, track: Color, modifier: Modifier = M
     val transition = androidx.compose.animation.core.rememberInfiniteTransition(label = "attesa")
     val x by transition.animateFloat(-.4f, 1f, androidx.compose.animation.core.infiniteRepeatable(
         androidx.compose.animation.core.tween(1200, easing = SvMotion.Emphasized)), label = "barra attesa")
-    BoxWithConstraints(modifier.fillMaxWidth().height(4.dp).clip(CircleShape).background(track)) {
-        Box(Modifier.offset(x = maxWidth * x).width(maxWidth * .4f).fillMaxHeight().clip(CircleShape).background(color))
+    BoxWithConstraints(modifier.fillMaxWidth().height(4.dp).clip(SvCircle).background(track)) {
+        Box(Modifier.offset(x = maxWidth * x).width(maxWidth * .4f).fillMaxHeight().clip(SvCircle).background(color))
+    }
+}
+
+/**
+ * Every chapter of a book, searchable by number or title and grouped by part with
+ * sticky headers; part chips jump through very long books.
+ */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+internal fun ChaptersSheet(book: Book, live: Book, marks: List<Bookmark>, onGo: (BookChapter) -> Unit) {
+    val sv = LocalSv.current
+    val timeline = remember(book.tracks) { book.chapterTimeline() }
+    val parts = remember(book.tracks, timeline) { book.chapterParts(timeline) }
+    val long = timeline.size > LONG_BOOK_CHAPTERS
+    val current = if (live.completed) -1 else (live.currentChapter()?.ordinal ?: 1) - 1
+    val marked = remember(marks, timeline) {
+        marks.mapNotNull { m -> timeline.lastOrNull { it.trackIndex == m.trackIndex && it.startMs <= m.positionMs }?.ordinal?.minus(1) }.toSet()
+    }
+    var query by remember(book.id) { mutableStateOf("") }
+    val q = query.trim().lowercase()
+    val groups = remember(parts, timeline, q) {
+        parts.map { p -> p to (p.first..p.last).filter { i -> q.isEmpty() || "${i + 1}".startsWith(q) || timeline[i].title.lowercase().contains(q) } }
+            .filter { it.second.isNotEmpty() }
+    }
+    // Flat positions of headers and rows, for the chips and the initial scroll.
+    val headerAt = remember(groups) {
+        var n = 0
+        groups.associate { (p, rows) -> p.index to n.also { n += 1 + rows.size } }
+    }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(book.id) {
+        val g = groups.firstOrNull { (_, rows) -> current in rows } ?: return@LaunchedEffect
+        val index = (headerAt[g.first.index] ?: 0) + 1 + g.second.indexOf(current)
+        // A few rows of context above the current chapter.
+        listState.scrollToItem((index - 3).coerceAtLeast(0))
+    }
+    val left = listeningTime(book.durationMs - live.playedMs, live.speed)
+
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text("Tutti i capitoli", Modifier.weight(1f), style = SvType.Label.copy(fontSize = 16.sp), color = sv.ink)
+        Text("${timeline.size} · ${dur(left)} rimasti", style = SvType.Mono, color = sv.ink2, maxLines = 1)
+    }
+    Spacer(Modifier.height(14.dp))
+    BasicTextField(query, { query = it }, Modifier.fillMaxWidth().testTag("chapter_search"), singleLine = true,
+        textStyle = SvType.Body.copy(color = sv.ink), cursorBrush = SolidColor(sv.accent),
+        decorationBox = { inner ->
+            Row(Modifier.fillMaxWidth().height(46.dp).clip(svRounded(23.dp)).background(sv.bg).padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Rounded.Search, null, Modifier.size(18.dp), tint = sv.ink2)
+                Spacer(Modifier.width(10.dp))
+                Box(Modifier.weight(1f)) {
+                    if (query.isEmpty()) Text("Numero o titolo del capitolo", style = SvType.Body, color = sv.ink2, maxLines = 1)
+                    inner()
+                }
+            }
+        })
+    if (long && parts.size > 1) {
+        Spacer(Modifier.height(14.dp))
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            parts.forEach { p ->
+                Box(Modifier.widthIn(min = 52.dp).height(36.dp).clip(SvCircle).background(sv.bg)
+                    .motionClickable(pressedScale = .94f, onClickLabel = p.label) {
+                        headerAt[p.index]?.let { scope.launch { listState.animateScrollToItem(it) } }
+                    }.padding(horizontal = 14.dp), contentAlignment = Alignment.Center) {
+                    Text(p.chip, style = SvType.Mono, color = sv.ink, maxLines = 1)
+                }
+            }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().height(430.dp).testTag("chapter_list"), state = listState) {
+        if (groups.isEmpty()) item(key = "empty") {
+            Text("Nessun capitolo corrisponde a “$query”", Modifier.fillMaxWidth().padding(vertical = 40.dp), style = SvType.BodySmall,
+                color = sv.ink2, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+        groups.forEach { (part, rows) ->
+            stickyHeader(key = "part:${part.index}") {
+                Column(Modifier.fillMaxWidth().background(sv.surface)) {
+                    Row(Modifier.padding(top = 12.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Eyebrow(if (long) part.label else "Capitoli", sv.accent, Modifier.weight(1f))
+                        Text("${rows.size}", style = SvType.MonoSmall, color = sv.ink2)
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(sv.line))
+                }
+            }
+            items(rows, key = { "row:$it" }) { i ->
+                val c = timeline[i]
+                val isCurrent = i == current
+                Column(Modifier.fillMaxWidth().testTag("sheet_chapter_${c.ordinal}")
+                    .motionClickable(pressedScale = .98f, onClickLabel = "Riproduci ${c.title}") { onGo(c) }
+                    .graphicsLayer { alpha = if (current < 0 || i < current) .5f else 1f }) {
+                    Row(Modifier.height(47.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${i + 1}".padStart(3, '0'), Modifier.width(36.dp), style = SvType.Mono, color = sv.ink2)
+                        Text(c.title, Modifier.weight(1f), style = SvType.BodySmall.copy(fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal),
+                            color = if (isCurrent) sv.accent else sv.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (i in marked) Icon(Icons.Rounded.Bookmark, "Con segnalibro", Modifier.padding(start = 6.dp).size(13.dp), tint = sv.accent)
+                        if (isCurrent) Text("ORA", Modifier.padding(start = 8.dp), style = SvType.EyebrowSmall.copy(fontWeight = FontWeight.Bold), color = sv.accent)
+                        Text(dur(c.durationMs), Modifier.width(52.dp), style = SvType.Mono, color = sv.ink2, maxLines = 1,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End)
+                    }
+                    Box(Modifier.fillMaxWidth().height(1.dp).background(sv.line))
+                }
+            }
+        }
     }
 }

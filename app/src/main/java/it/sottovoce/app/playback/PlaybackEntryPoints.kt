@@ -22,6 +22,7 @@ import it.sottovoce.app.MainActivity
 import it.sottovoce.app.R
 import it.sottovoce.app.SottovoceApp
 import it.sottovoce.app.data.Book
+import it.sottovoce.app.data.ThemeSettings
 import it.sottovoce.app.data.chapterPlaybackStart
 import it.sottovoce.app.data.currentChapter
 import kotlinx.coroutines.launch
@@ -109,8 +110,8 @@ object WidgetUpdater {
     }
 
     private fun views(context: Context, book: Book?, playing: Boolean): RemoteViews = RemoteViews(context.packageName, R.layout.widget_listening).apply {
-        val theme = context.getSharedPreferences("preferences", Context.MODE_PRIVATE).getString("theme", "system")
-        val dark = theme == "dark" || theme == "system" && (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val systemDark = (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES
+        val dark = ThemeSettings.read(context.getSharedPreferences("preferences", Context.MODE_PRIVATE)).resolve(systemDark).dark
         val foreground = android.graphics.Color.parseColor(if (dark) "#F3EFE5" else "#17231C")
         setInt(R.id.widget_root, "setBackgroundColor", android.graphics.Color.parseColor(if (dark) "#292E29" else "#E7EDE2"))
         setTextColor(R.id.widget_title, foreground)

@@ -155,7 +155,7 @@ internal fun HomeScreen(vm: LibraryViewModel, books: List<Book>, current: Book?,
                         Spacer(Modifier.width(10.dp))
                         Text(filtered.size.toString().padStart(2, '0'), style = SvType.Mono, color = sv.ink2, modifier = Modifier.padding(bottom = 8.dp))
                         Spacer(Modifier.weight(1f))
-                        Row(Modifier.clip(CircleShape).motionClickable(onClickLabel = "Cambia ordinamento") { sort = (sort + 1) % 3 }
+                        Row(Modifier.clip(SvCircle).motionClickable(onClickLabel = "Cambia ordinamento") { sort = (sort + 1) % 3 }
                             .padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Rounded.SwapVert, null, Modifier.size(16.dp), tint = sv.ink2)
                             Spacer(Modifier.width(4.dp))
@@ -205,7 +205,7 @@ private fun TopBar(searchOpen: Boolean, query: String, onQuery: (String) -> Unit
         }
         if (t > 0f) Row(Modifier.align(Alignment.Center).fillMaxWidth().height(46.dp)
             .graphicsLayer { alpha = t; scaleX = .2f + .8f * t; transformOrigin = TransformOrigin(.85f, .5f) }
-            .clip(CircleShape).background(sv.surface).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            .clip(SvCircle).background(sv.surface).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.Search, null, Modifier.size(20.dp), tint = sv.ink2)
             Spacer(Modifier.width(10.dp))
             Box(Modifier.weight(1f)) {
@@ -236,7 +236,7 @@ private fun UpdateBanner(vm: LibraryViewModel, version: String, size: Long, onLa
         "open" -> "La tua libreria resta esattamente com’è"
         else -> "${"%.1f".format(size / 1_048_576.0)} MB · versione firmata"
     }
-    Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(sv.ink)
+    Box(Modifier.padding(horizontal = 12.dp, vertical = 6.dp).fillMaxWidth().clip(svRounded(26.dp)).background(sv.ink)
         .testTag("update_banner")) {
         Row(Modifier.padding(start = 20.dp, end = 10.dp, top = 14.dp, bottom = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -244,7 +244,7 @@ private fun UpdateBanner(vm: LibraryViewModel, version: String, size: Long, onLa
                 CrossfadeText(sub, SvType.MetaSmall, sv.bg.copy(alpha = .7f))
             }
             if (phase == "idle") {
-                Text("Più tardi", Modifier.clip(CircleShape).motionClickable(onClick = onLater).padding(horizontal = 12.dp, vertical = 10.dp),
+                Text("Più tardi", Modifier.clip(SvCircle).motionClickable(onClick = onLater).padding(horizontal = 12.dp, vertical = 10.dp),
                     style = SvType.Label, color = sv.bg.copy(alpha = .75f))
                 val compatible = (vm.release?.minSdk ?: 0) <= Build.VERSION.SDK_INT
                 PillButton("Aggiorna", sv.accent, sv.onAccent, height = 40.dp, enabled = compatible && !vm.updateInProgress, onClick = onUpdate)
@@ -265,9 +265,9 @@ private fun NowPlayingCard(vm: LibraryViewModel, book: Book, now: NowPlaying?, t
     val chapterProgress = if (live.completed) 1f else chapter?.progress(live.positionMs) ?: live.progress
     val left = chapter?.let { listeningTime(it.remainingMs(live.positionMs), live.speed) } ?: listeningTime(book.durationMs - live.playedMs, live.speed)
     val speedLabel = formatSpeed(live.speed)
-    Box(Modifier.padding(12.dp).fillMaxWidth().clip(RoundedCornerShape(38.dp)).background(colors.c1)
+    Box(Modifier.padding(12.dp).fillMaxWidth().clip(svRounded(38.dp)).background(colors.c1)
         .testTag("now_playing").motionClickable(pressedScale = .985f, onClickLabel = "Apri ${book.title}", onClick = onOpen)) {
-        Box(Modifier.align(Alignment.TopEnd).offset(70.dp, (-70).dp).size(240.dp).clip(CircleShape).background(colors.c3.copy(alpha = .3f)))
+        Box(Modifier.align(Alignment.TopEnd).offset(70.dp, (-70).dp).size(240.dp).clip(SvCircle).background(colors.c3.copy(alpha = .3f)))
         Column(Modifier.padding(20.dp)) {
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val coverSize = minOf(172.dp, maxWidth * .5f)
@@ -291,11 +291,12 @@ private fun NowPlayingCard(vm: LibraryViewModel, book: Book, now: NowPlaying?, t
             Spacer(Modifier.height(18.dp))
             Text(book.title, style = SvType.display(44.sp, .88f), color = colors.c2, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(6.dp))
-            Text(chapter?.let { "${it.ordinal}. ${it.title}" } ?: book.author, style = SvType.BodySmall, color = colors.c2.copy(alpha = .75f),
+            Text(chapter?.label() ?: book.author, style = SvType.BodySmall, color = colors.c2.copy(alpha = .75f),
                 maxLines = 1, overflow = TextOverflow.Ellipsis)
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Waveform(34, (chapter?.ordinal ?: 0) + 3 + book.id.length, chapterProgress, colors.c2, Modifier.weight(1f).height(40.dp))
+                Waveform(34, (chapter?.ordinal ?: 0) + 3 + book.id.length, chapterProgress, colors.c2, Modifier.weight(1f).height(40.dp),
+                    playing = playing)
                 Spacer(Modifier.width(12.dp))
                 IconCircle(skipBackIcon(vm.skipBack), "Indietro ${vm.skipBack} secondi", 48.dp, colors.c2, border = colors.c2.copy(alpha = .35f),
                     pressedRotation = -45f, onClick = onBack)
@@ -315,7 +316,7 @@ internal fun formatSpeed(speed: Float): String {
 private fun StatTiles(stats: ListeningStats?, modifier: Modifier, onOpen: () -> Unit) {
     val sv = LocalSv.current
     Row(modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(28.dp)).background(sv.surface)
+        Column(Modifier.weight(1f).fillMaxHeight().clip(svRounded(28.dp)).background(sv.surface)
             .motionClickable(pressedScale = .97f, onClickLabel = "Apri le statistiche", onClick = onOpen).padding(18.dp)) {
             Eyebrow("Questa settimana", sv.ink2, small = true)
             Spacer(Modifier.height(8.dp))
@@ -326,12 +327,12 @@ private fun StatTiles(stats: ListeningStats?, modifier: Modifier, onOpen: () -> 
             Row(Modifier.height(26.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
                 (if (days.isEmpty()) List(7) { null } else days).forEachIndexed { i, d ->
                     val h = ((d?.durationMs ?: 0).toFloat() / max).coerceIn(.08f, 1f)
-                    Box(Modifier.weight(1f).fillMaxHeight(h).clip(RoundedCornerShape(3.dp))
+                    Box(Modifier.weight(1f).fillMaxHeight(h).clip(svRounded(3.dp))
                         .background(if (i == 6) sv.accent else sv.ink2.copy(alpha = .55f)))
                 }
             }
         }
-        Column(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(28.dp)).background(sv.surface)
+        Column(Modifier.weight(1f).fillMaxHeight().clip(svRounded(28.dp)).background(sv.surface)
             .motionClickable(pressedScale = .97f, onClickLabel = "Apri le statistiche", onClick = onOpen).padding(18.dp)) {
             Eyebrow("Serie di giorni", sv.ink2, small = true)
             Spacer(Modifier.height(8.dp))
@@ -342,7 +343,7 @@ private fun StatTiles(stats: ListeningStats?, modifier: Modifier, onOpen: () -> 
                 val days = stats?.days.orEmpty()
                 repeat(7) { i ->
                     val on = (days.getOrNull(i)?.durationMs ?: 0) > 0
-                    Box(Modifier.size(12.dp).clip(CircleShape).background(if (on) (if (i == 6) sv.accent else sv.ink) else sv.ink2.copy(alpha = .25f)))
+                    Box(Modifier.size(12.dp).clip(SvCircle).background(if (on) (if (i == 6) sv.accent else sv.ink) else sv.ink2.copy(alpha = .25f)))
                 }
             }
         }
@@ -363,7 +364,7 @@ private fun KeepGoing(books: List<Book>, onOpen: (Book) -> Unit) {
                 Column(Modifier.width(164.dp).motionClickable(pressedScale = .97f, onClickLabel = "Apri ${b.title}") { onOpen(b) }) {
                     BookCover(b, colors, Modifier.size(164.dp).coverOrigin("c-${b.id}", 22.dp), radius = 22.dp)
                     Spacer(Modifier.height(10.dp))
-                    Box(Modifier.fillMaxWidth().height(3.dp).clip(CircleShape).background(sv.line)) {
+                    Box(Modifier.fillMaxWidth().height(3.dp).clip(SvCircle).background(sv.line)) {
                         Box(Modifier.fillMaxHeight().fillMaxWidth(b.progress).background(sv.ink))
                     }
                     Spacer(Modifier.height(8.dp))
@@ -403,12 +404,12 @@ internal fun BookRow(book: Book, now: NowPlaying, onOpen: () -> Unit) {
     val colors = rememberBookColors(book)
     val live = book.live(now)
     val state = live.state()
-    Row(Modifier.padding(horizontal = 10.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).testTag("book_${book.id}")
+    Row(Modifier.padding(horizontal = 10.dp).fillMaxWidth().clip(svRounded(26.dp)).testTag("book_${book.id}")
         .motionClickable(pressedScale = .98f, onClickLabel = "Apri ${book.title}", onClick = onOpen).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box {
             BookCover(book, colors, Modifier.size(76.dp).coverOrigin("g-${book.id}", 16.dp), radius = 16.dp)
-            if (book.needsRelink) Box(Modifier.align(Alignment.TopEnd).offset(5.dp, (-5).dp).size(20.dp).clip(CircleShape).background(SvError)
+            if (book.needsRelink) Box(Modifier.align(Alignment.TopEnd).offset(5.dp, (-5).dp).size(20.dp).clip(SvCircle).background(SvError)
                 .semantics { contentDescription = "File da ricollegare" }, contentAlignment = Alignment.Center) {
                 Text("!", style = SvType.Label.copy(fontSize = 12.sp), color = Color.White)
             }
@@ -429,9 +430,9 @@ private fun StatusBadge(state: BookState, progress: Float) {
     val sv = LocalSv.current
     when (state) {
         BookState.PROGRESS -> ProgressRing(progress, 38.dp, sv.ink, sv.line, label = "${(progress * 100).roundToInt()}")
-        BookState.NEW -> Text("NUOVO", Modifier.clip(CircleShape).background(sv.accent).padding(horizontal = 10.dp, vertical = 5.dp),
+        BookState.NEW -> Text("NUOVO", Modifier.clip(SvCircle).background(sv.accent).padding(horizontal = 10.dp, vertical = 5.dp),
             style = SvType.EyebrowSmall, color = sv.onAccent)
-        BookState.DONE -> Box(Modifier.size(38.dp).clip(CircleShape).background(sv.surface).semantics { contentDescription = "Finito" },
+        BookState.DONE -> Box(Modifier.size(38.dp).clip(SvCircle).background(sv.surface).semantics { contentDescription = "Finito" },
             contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Check, null, Modifier.size(18.dp), tint = sv.ink) }
     }
 }
@@ -443,7 +444,7 @@ private fun SeriesRow(name: String, books: List<Book>, onOpen: () -> Unit) {
     val played = books.sumOf { if (it.completed) it.durationMs.coerceAtLeast(0) else it.playedMs.coerceIn(0, it.durationMs.coerceAtLeast(0)) }
     val progress = if (total > 0) played.toFloat() / total else if (books.all { it.completed }) 1f else 0f
     val state = when { books.all { it.completed } -> BookState.DONE; books.all { it.state() == BookState.NEW } -> BookState.NEW; else -> BookState.PROGRESS }
-    Row(Modifier.padding(horizontal = 10.dp).fillMaxWidth().clip(RoundedCornerShape(26.dp)).testTag("series_card_$name")
+    Row(Modifier.padding(horizontal = 10.dp).fillMaxWidth().clip(svRounded(26.dp)).testTag("series_card_$name")
         .motionClickable(pressedScale = .98f, onClickLabel = "Apri la serie $name", onClick = onOpen).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(76.dp)) {
@@ -471,7 +472,7 @@ private fun SeriesRow(name: String, books: List<Book>, onOpen: () -> Unit) {
 private fun EmptyLibrary(onImport: () -> Unit, onRestore: () -> Unit) {
     val sv = LocalSv.current
     Column(Modifier.padding(12.dp)) {
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(36.dp)).background(sv.accent).padding(26.dp)) {
+        Column(Modifier.fillMaxWidth().clip(svRounded(36.dp)).background(sv.accent).padding(26.dp)) {
             Text("Niente da ascoltare. Per ora.", style = SvType.display(64.sp, .86f), color = sv.onAccent)
             Spacer(Modifier.height(16.dp))
             Text("Importa un MP3, un M4B o una cartella di capitoli. Nessun account, nessun catalogo online: solo i tuoi file.",
@@ -531,7 +532,7 @@ internal fun FloatingPill(vm: LibraryViewModel, book: Book, playing: Boolean, vi
                 val s = .9f + .1f * shown; scaleX = s; scaleY = s
                 alpha = shown.coerceIn(0f, 1f)
             }
-            .coverShadow(38.dp, 16.dp).clip(RoundedCornerShape(38.dp)).background(colors.c1).testTag("floating_pill")
+            .coverShadow(38.dp, 16.dp).clip(svRounded(38.dp)).background(colors.c1).testTag("floating_pill")
             .motionClickable(enabled = visible, pressedScale = .98f, onClickLabel = "Apri ${book.title}", onClick = onOpen)) {
             Row(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 BookCover(book, colors, Modifier.size(52.dp).coverOrigin("pill", 26.dp).graphicsLayer { rotationZ = spin },
@@ -539,7 +540,7 @@ internal fun FloatingPill(vm: LibraryViewModel, book: Book, playing: Boolean, vi
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(book.title, style = SvType.Label, color = colors.c2, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(chapter?.let { "${it.ordinal}. ${it.title}" } ?: book.author, style = SvType.MetaSmall, color = colors.c2.copy(alpha = .7f),
+                    Text(chapter?.label() ?: book.author, style = SvType.MetaSmall, color = colors.c2.copy(alpha = .7f),
                         maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 IconCircle(skipBackIcon(vm.skipBack), "Indietro ${vm.skipBack} secondi", 44.dp, colors.c2, enabled = visible,

@@ -40,8 +40,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val importer = AudioImporter(app, library)
     val updater = UpdateManager(app)
     private val prefs = app.getSharedPreferences("preferences", Context.MODE_PRIVATE)
-    var theme by mutableStateOf(prefs.getString("theme", "system") ?: "system")
+    var themeSettings by mutableStateOf(ThemeSettings.read(prefs))
         private set
+    /** The theme chosen by hand (the day or night slot currently selected). */
+    val theme: String get() = themeSettings.selected.id
+    /** Settings-only preview of the day (false) or night (true) theme while switching is automatic. */
+    var themePreviewNight by mutableStateOf<Boolean?>(null)
     var skipBack by mutableStateOf(prefs.getInt("skipBack", 15))
         private set
     var skipForward by mutableStateOf(prefs.getInt("skipForward", 30))
@@ -358,7 +362,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun restoreBackup() = task("Ripristino…") {
         val backup = pendingBackup ?: return@task
         stopCurrent(); library.restore(backup)
-        theme = backup.preferences.theme; skipBack = backup.preferences.skipBack; skipForward = backup.preferences.skipForward
+        themeSettings = backup.preferences.themeSettings(); themePreviewNight = null; skipBack = backup.preferences.skipBack; skipForward = backup.preferences.skipForward
         smartRewind = backup.preferences.smartRewind
         nightTimerEnabled = backup.preferences.nightTimerEnabled
         nightTimerStartMinutes = backup.preferences.nightTimerStartMinutes
@@ -408,8 +412,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         autoUpdateCheck = enabled; prefs.edit().putBoolean("autoUpdateCheck", enabled).apply()
     }
     fun changeTheme(value: String) {
-        require(AppTheme.fromId(value) != null)
-        theme = value; prefs.edit().putString("theme", value).apply()
+        val next = if (value == AppTheme.SYSTEM_ID) ThemeSettings.fromLegacy(value) else themeSettings.pick(requireNotNull(AppTheme.fromId(value)))
+        saveThemeSettings(next)
+        if (next.auto) themePreviewNight = AppTheme.fromId(value)?.dark
+    }
+    fun changeThemeAuto(enabled: Boolean) { saveThemeSettings(themeSettings.copy(auto = enabled)); themePreviewNight = null }
+    fun changeThemeSchedule(schedule: ThemeSchedule) { saveThemeSettings(themeSettings.copy(schedule = schedule)); themePreviewNight = null }
+    /** "Use" with manual switching; a temporary preview while switching is automatic. */
+    fun showThemeSide(night: Boolean) {
+        if (themeSettings.auto) themePreviewNight = night else saveThemeSettings(themeSettings.copy(manualNight = night))
+    }
+    private fun saveThemeSettings(value: ThemeSettings) {
+        themeSettings = value; value.write(prefs.edit()).apply()
     }
     fun setSkips(back: Int, forward: Int) {
         skipBack = back; skipForward = forward

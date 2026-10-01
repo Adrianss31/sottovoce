@@ -171,6 +171,19 @@ fun Book.chapterPlaybackStart(index: Int = trackIndex, position: Long = position
     val timerFade: Boolean = true,
     val timerShakeExtend: Boolean = false,
     val libraryViewMode: String = "grid",
+    // Day/night themes (0.7.1). Absent in older backups, which fall back to `theme`.
+    val themeDay: String? = null,
+    val themeNight: String? = null,
+    val themeAuto: Boolean? = null,
+    val themeSchedule: String? = null,
+    val themeNightManual: Boolean? = null,
+) {
+    fun themeSettings(): ThemeSettings = ThemeSettings.of(themeDay, themeNight, themeAuto, themeSchedule, themeNightManual, theme)
+}
+
+fun Preferences.withThemeSettings(settings: ThemeSettings): Preferences = copy(
+    theme = settings.legacyId, themeDay = settings.day.id, themeNight = settings.night.id, themeAuto = settings.auto,
+    themeSchedule = settings.schedule.id, themeNightManual = settings.manualNight,
 )
 
 @Serializable data class Backup(
@@ -184,7 +197,10 @@ fun Book.chapterPlaybackStart(index: Int = trackIndex, position: Long = position
 fun validateBackup(backup: Backup): Backup {
     require(backup.format == "sottovoce" && backup.version in 1..2) { "Formato di backup non supportato." }
     require(backup.books.size <= 2000 && backup.bookmarks.size <= 50_000) { "Backup troppo grande." }
-    require(AppTheme.fromId(backup.preferences.theme) != null) { "Tema del backup non supportato." }
+    require(AppTheme.isValidId(backup.preferences.theme)) { "Tema del backup non supportato." }
+    backup.preferences.themeDay?.let { require(AppTheme.fromId(it)?.dark == false) { "Tema del backup non supportato." } }
+    backup.preferences.themeNight?.let { require(AppTheme.fromId(it)?.dark == true) { "Tema del backup non supportato." } }
+    backup.preferences.themeSchedule?.let { require(ThemeSchedule.fromId(it) != null) { "Tema del backup non supportato." } }
     require(backup.preferences.skipBack in 5..120 && backup.preferences.skipForward in 5..120)
     require(backup.preferences.nightTimerStartMinutes in 0 until 24 * 60)
     require(backup.preferences.nightTimerDuration in 5..180)
@@ -327,5 +343,48 @@ fun groupForLibrary(books: List<Book>, allBooks: List<Book> = books): List<Libra
                     allGrouped[key]?.size ?: sorted.size))
             }
         }
+    }
+}
+
+/** Books with more chapters than this get the chapter map instead of the full list. */
+const val LONG_BOOK_CHAPTERS = 24
+
+/** "Capitolo 5" stays as is; any other title is numbered, e.g. "5. La colazione". */
+fun BookChapter.label(): String =
+    if (Regex("""^(chapter|capitolo|cap\.?|chapitre|kapitel|cap[ií]tulo|track|traccia|parte?)\s*\d+$""", RegexOption.IGNORE_CASE)
+            .matches(title.trim())) title.trim() else "$ordinal. $title"
+
+/** A run of consecutive chapters shown together in the chapter map and list. */
+data class ChapterPart(val index: Int, val label: String, val chip: String, val first: Int, val last: Int) {
+    val count: Int get() = last - first + 1
+}
+
+fun romanNumeral(value: Int): String {
+    var n = value.coerceIn(1, 3999)
+    return buildString {
+        listOf(1000 to "M", 900 to "CM", 500 to "D", 400 to "CD", 100 to "C", 90 to "XC", 50 to "L", 40 to "XL",
+            10 to "X", 9 to "IX", 5 to "V", 4 to "IV", 1 to "I").forEach { (v, s) -> while (n >= v) { append(s); n -= v } }
+    }
+}
+
+/**
+ * Groups the timeline (0-based indices) into parts: one per audio file when a
+ * multi-file book has chapters inside its files (e.g. a saga, one file per volume),
+ * otherwise blocks of whole grid rows (multiples of 20 chapters, at most ~8 blocks).
+ */
+fun Book.chapterParts(timeline: List<BookChapter> = chapterTimeline()): List<ChapterPart> {
+    if (timeline.isEmpty()) return emptyList()
+    val byTrack = timeline.indices.groupBy { timeline[it].trackIndex }
+    if (byTrack.size in 2..30 && timeline.size > byTrack.size) {
+        return byTrack.entries.sortedBy { it.key }.mapIndexed { i, (track, indices) ->
+            val name = tracks.getOrNull(track)?.name?.substringBeforeLast('.')?.trim().orEmpty()
+            ChapterPart(i, "Parte ${romanNumeral(i + 1)}" + if (name.isNotBlank()) " · $name" else "", romanNumeral(i + 1),
+                indices.first(), indices.last())
+        }
+    }
+    val size = maxOf(40, (timeline.size + 159) / 160 * 20)
+    return (timeline.indices step size).mapIndexed { i, start ->
+        val end = minOf(start + size, timeline.size) - 1
+        ChapterPart(i, "Capitoli ${start + 1}–${end + 1}", "${start + 1}", start, end)
     }
 }
