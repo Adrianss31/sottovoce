@@ -104,14 +104,8 @@ internal class WidgetArt(private val context: Context) {
             val s = maxOf(w.toFloat() / art.width, h.toFloat() / art.height)
             val dw = art.width * s; val dh = art.height * s
             canvas.drawBitmap(art, null, RectF((w - dw) / 2, (h - dh) / 2, (w + dw) / 2, (h + dh) / 2), Paint(Paint.FILTER_BITMAP_FLAG))
-            if (!typographic) return bitmap
-            // Text over art needs a veil in the book's own colour.
-            val veil = Paint().apply {
-                shader = android.graphics.LinearGradient(0f, 0f, 0f, h.toFloat(),
-                    intArrayOf(colors.c1.copy(alpha = .55f).toArgb(), 0, colors.c1.copy(alpha = .85f).toArgb()),
-                    floatArrayOf(0f, .35f, 1f), android.graphics.Shader.TileMode.CLAMP)
-            }
-            canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), veil)
+            // Real art already carries its title and author: nothing is printed over it.
+            return bitmap
         } else {
             canvas.drawColor(colors.c1.toArgb())
             val m = colors.motif
@@ -156,13 +150,21 @@ internal class WidgetArt(private val context: Context) {
     }
 
     /**
-     * The whole 2×2: cover (or art under a veil), author, and the title raised above
-     * the chapter line and the play button.
+     * The whole 2×2: generated cover with author and the title raised above
+     * the chapter line and the play button, or the real art with a bottom veil.
      */
     fun square(book: Book, colors: BookColors, theme: AppTheme, widthDp: Float, heightDp: Float): Bitmap {
         val bitmap = cover(book, colors, theme, widthDp, heightDp, 24f, 9f, 24f, typographic = false)
         val canvas = Canvas(bitmap)
-        if (art(book) != null) canvas.drawColor(colors.c1.copy(alpha = .45f).toArgb())
+        if (art(book) != null) {
+            // Only a veil at the bottom, so the chapter line and the play ring stay readable over the art.
+            val h = bitmap.height.toFloat()
+            canvas.drawRect(0f, h * .45f, bitmap.width.toFloat(), h, Paint().apply {
+                shader = android.graphics.LinearGradient(0f, h * .45f, 0f, h, 0, colors.c1.copy(alpha = .85f).toArgb(),
+                    android.graphics.Shader.TileMode.CLAMP)
+            })
+            return bitmap
+        }
         val inset = px(14f)
         val ink = colors.c2.toArgb()
         if (book.author.isNotBlank()) {
