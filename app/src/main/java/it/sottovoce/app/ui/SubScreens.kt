@@ -63,8 +63,8 @@ import java.time.LocalDate
 private fun SubScaffold(onBack: () -> Unit, tag: String, hasBottomBar: Boolean = false, bottomBar: @Composable () -> Unit = {},
     content: LazyListScope.() -> Unit) {
     val sv = LocalSv.current
-    Box(Modifier.fillMaxSize().background(sv.bg)
-        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { }) {
+    // The full-screen list receives every touch, so nothing reaches the dimmed home below.
+    Box(Modifier.fillMaxSize().background(sv.bg)) {
         LazyColumn(Modifier.fillMaxSize().testTag(tag),
             contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = if (hasBottomBar) 120.dp else 48.dp,
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 60.dp), content = content)
