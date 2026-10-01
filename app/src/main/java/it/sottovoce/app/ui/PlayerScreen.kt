@@ -3,6 +3,10 @@ package it.sottovoce.app.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -439,12 +443,10 @@ private fun ChapterGridCard(book: Book, timeline: List<BookChapter>, parts: List
     }
     val selScale = remember { Animatable(1.3f) }
     LaunchedEffect(sel) { selScale.snapTo(1f); selScale.animateTo(1.3f, policy.overshoot(300)) }
-    val pulse = remember { Animatable(1f) }
-    LaunchedEffect(playing && policy.animationsEnabled) {
-        if (playing && policy.animationsEnabled) while (true) {
-            pulse.animateTo(.4f, tween(700, easing = FastOutSlowInEasing)); pulse.animateTo(1f, tween(700, easing = FastOutSlowInEasing))
-        } else pulse.snapTo(1f)
-    }
+    // The current chapter's cell pulses while playing.
+    val pulse: State<Float>? = if (playing && policy.animationsEnabled) rememberInfiniteTransition(label = "capitolo corrente")
+        .animateFloat(1f, .4f, infiniteRepeatable(tween(700, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "pulsazione")
+        else null
     val button by animateFloatAsState(if (isCurrent) 0f else 1f, policy.overshoot(400), label = "ascolta capitolo")
 
     Column(Modifier.fillMaxWidth().clip(svRounded(28.dp)).background(c2.copy(alpha = .08f)).padding(horizontal = 16.dp, vertical = 18.dp),
@@ -496,7 +498,7 @@ private fun ChapterGridCard(book: Book, timeline: List<BookChapter>, parts: List
                     drawText(count, topLeft = Offset(size.width - count.size.width, top))
                 }
                 fun cellColor(i: Int) = when {
-                    i == current -> c2.copy(alpha = pulse.value)
+                    i == current -> c2.copy(alpha = pulse?.value ?: 1f)
                     current < 0 || i < current -> c2.copy(alpha = .48f)
                     else -> c2.copy(alpha = .15f)
                 }

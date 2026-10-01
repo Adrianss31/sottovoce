@@ -37,7 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.withFrameMillis
+import androidx.compose.animation.core.withInfiniteAnimationFrameMillis
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -123,8 +123,9 @@ internal fun Waveform(bars: Int, seed: Int, progress: Float, color: Color, modif
     val clock = remember { mutableLongStateOf(0L) }
     LaunchedEffect(playing, animate) {
         if (!playing || !animate) return@LaunchedEffect
-        var last = withFrameMillis { it }
-        while (true) withFrameMillis { now -> clock.longValue += now - last; last = now }
+        // Infinite-animation frames: idle-aware, like InfiniteTransition.
+        var last = withInfiniteAnimationFrameMillis { it }
+        while (true) withInfiniteAnimationFrameMillis { now -> clock.longValue += now - last; last = now }
     }
     Canvas(modifier.clearAndSetSemantics { }) {
         val t = clock.longValue / 1000f
