@@ -1,4 +1,3 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
 package it.sottovoce.app.ui
 
 import android.app.StatusBarManager

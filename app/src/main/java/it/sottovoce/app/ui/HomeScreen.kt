@@ -1,4 +1,3 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
 package it.sottovoce.app.ui
 
 import android.os.Build
@@ -219,6 +218,7 @@ private fun TopBar(searchOpen: Boolean, query: String, onQuery: (String) -> Unit
     }
 }
 
+@UnstableApi
 @Composable
 private fun UpdateBanner(vm: LibraryViewModel, version: String, size: Long, onLater: () -> Unit, onUpdate: () -> Unit) {
     val sv = LocalSv.current

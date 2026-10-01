@@ -1,4 +1,3 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
 package it.sottovoce.app.ui
 
 import androidx.compose.animation.core.animateFloat
@@ -238,6 +237,7 @@ private fun ManageRow(icon: ImageVector, title: String, subtitle: String?, color
     }
 }
 
+@UnstableApi
 @Composable
 internal fun ManageSheet(vm: LibraryViewModel, book: Book, onEdit: () -> Unit, onReset: () -> Unit, onRelink: () -> Unit,
     onRemoveCopies: () -> Unit, onRemove: () -> Unit, onComplete: () -> Unit) {
