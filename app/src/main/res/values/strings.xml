@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Sottovoce</string>
-    <string name="widget_description">Libro e capitolo in ascolto con comandi rapidi</string>
+    <string name="widget_description_wide">Capitolo, forma d’onda, salti e tempo residuo nel libro</string>
+    <string name="widget_description_tall">Mini player verticale</string>
+    <string name="widget_description_square">La copertina è il widget; l’anello è il capitolo</string>
     <string name="widget_cover">Copertina</string>
-    <string name="widget_chapter">Capitolo</string>
-    <string name="widget_back">Indietro di 10 secondi</string>
+    <string name="widget_back">Indietro</string>
+    <string name="widget_forward">Avanti</string>
     <string name="widget_play_pause">Riproduci o pausa</string>
-    <string name="widget_timer">Timer</string>
 </resources>

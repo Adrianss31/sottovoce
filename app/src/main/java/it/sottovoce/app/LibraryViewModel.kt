@@ -424,10 +424,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     }
     private fun saveThemeSettings(value: ThemeSettings) {
         themeSettings = value; value.write(prefs.edit()).apply()
+        refreshWidgets()
     }
+    /** Widgets follow the theme and the skip lengths. */
+    private fun refreshWidgets() = WidgetUpdater.update(app, now.bookId, playing = now.playing, force = true)
     fun setSkips(back: Int, forward: Int) {
         skipBack = back; skipForward = forward
         prefs.edit().putInt("skipBack", back).putInt("skipForward", forward).apply()
+        refreshWidgets()
     }
     fun changeSmartRewind(enabled: Boolean) {
         smartRewind = enabled; prefs.edit().putBoolean("smartRewind", enabled).apply()

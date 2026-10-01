@@ -31,6 +31,7 @@ import androidx.test.rule.GrantPermissionRule
 import it.sottovoce.app.data.*
 import it.sottovoce.app.playback.PlaybackSignals
 import it.sottovoce.app.playback.PlaybackService
+import it.sottovoce.app.playback.WidgetUpdater
 import kotlinx.coroutines.runBlocking
 import org.junit.*
 import org.junit.Assert.*
@@ -149,6 +150,34 @@ class AppSmokeTest {
         compose.onNodeWithText("Usa").performScrollTo().performClick()
         compose.runOnIdle { assertTrue(vm.themeSettings.manualNight); assertEquals("nord", vm.theme) }
         screenshot("theme-night-manual")
+    }
+    @Test fun homeWidgetsRenderInAllThreeFormats() {
+        val book = seed()
+        runBlocking { app.library.savePosition(book.id, 0, 20_000, 1.25f) }
+        val output = InstrumentationRegistry.getArguments().getString("additionalTestOutputDir")
+        val dir = (output?.let { File(it) } ?: requireNotNull(context.getExternalFilesDir("screenshots"))).apply { mkdirs() }
+        fun capture(suffix: String, playing: Boolean) {
+            val previews = WidgetUpdater.previews(context, book.id, playing)
+            assertEquals(listOf("wide", "tall", "square"), previews.map { it.first })
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                val density = context.resources.displayMetrics.density
+                previews.forEach { (name, views) ->
+                    // Inflating through RemoteViews rejects any view a launcher could not show.
+                    val view = views.apply(context, android.widget.FrameLayout(context))
+                    val (w, h) = when (name) { "wide" -> 408 to 156; "tall" -> 156 to 240; else -> 156 to 156 }
+                    val width = (w * density).toInt(); val height = (h * density).toInt()
+                    view.measure(android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY),
+                        android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY))
+                    view.layout(0, 0, width, height)
+                    val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                    android.graphics.Canvas(image).apply { drawColor(android.graphics.Color.rgb(34, 48, 47)); view.draw(this) }
+                    File(dir, "widget-$name-$suffix.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+            }
+        }
+        capture("light-playing", playing = true)
+        compose.runOnIdle { vm.changeThemeAuto(false); vm.changeTheme("dark") }
+        capture("dark-paused", playing = false)
     }
     @Test fun longBookShowsChapterMapAndSearchableList() {
         val original = seed()

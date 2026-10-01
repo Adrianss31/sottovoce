@@ -22,9 +22,13 @@ Un lettore Android per gli audiolibri che possiedi già. Interfaccia in italiano
 - Offre timer personalizzati, fine capitolo, dissolvenza, estensione di 10 minuti e attivazione automatica dopo un orario notturno scelto.
 - Organizza i libri per serie e numero, con mosaico di copertine, progresso complessivo, ordinamento dedicato e vista compatta; nella pagina principale ogni serie appare come una tessera unica e un tocco mostra i suoi libri.
 - Mostra statistiche di ascolto locali: riepilogo in home, oggi, ultimi 7 giorni, continuità, ultimi 6 mesi, libri e serie completati, titoli più ascoltati.
-- Include un widget con capitolo e avanzamento e un riquadro dei comandi rapidi Android per play/pausa.
+- Include tre widget per la Home (5×2, 2×3, 2×2) con capitolo, forma d’onda, salti e play, e un riquadro dei comandi rapidi Android per play/pausa.
 
 **Non contiene fonti web, cataloghi, streaming né download di audiolibri.** La rete viene usata all’apertura per verificare il piccolo descrittore firmato degli aggiornamenti e, solo dopo un tuo tocco, per scaricare l’APK. Il collegamento “Codice sorgente” apre il browser esterno.
+
+## Novità della 0.7.2
+
+Tre nuovi widget per la Home (5×2, 2×3 e 2×2) con copertina, capitolo, forma d’onda, salti e play, nei colori e nei caratteri del tema. Dettagli in [CHANGELOG-0.7.2.md](docs/CHANGELOG-0.7.2.md).
 
 ## Novità della 0.7.1
 
