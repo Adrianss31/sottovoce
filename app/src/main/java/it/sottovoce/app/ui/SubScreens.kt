@@ -583,7 +583,7 @@ internal fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit, onExport: 
                 }
                 PillButton("Riquadro", sv.surface, sv.ink, Modifier.weight(1f), icon = Icons.Rounded.DashboardCustomize) {
                     if (Build.VERSION.SDK_INT >= 33) context.getSystemService(StatusBarManager::class.java).requestAddTileService(
-                        ComponentName(context, PlaybackTileService::class.java), "Sottovoce", AndroidIcon.createWithResource(context, R.drawable.ic_launcher), context.mainExecutor
+                        ComponentName(context, PlaybackTileService::class.java), "Sottovoce", AndroidIcon.createWithResource(context, R.drawable.ic_tile), context.mainExecutor
                     ) { result -> vm.message = if (result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED || result == StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ALREADY_ADDED)
                         "Riquadro Sottovoce disponibile nei comandi rapidi." else "Il riquadro non è stato aggiunto." }
                     else vm.message = "Apri i comandi rapidi, scegli Modifica e trascina il riquadro Sottovoce."
