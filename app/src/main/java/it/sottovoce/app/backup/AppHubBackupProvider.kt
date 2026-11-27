@@ -15,6 +15,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.os.Process
+import android.provider.OpenableColumns
+import org.json.JSONObject
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -22,17 +24,22 @@ import java.io.FileInputStream
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.zip.Deflater
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
- * Bridge locale per esportare e ripristinare i dati dell'app verso AppHub.
- * Verifica la firma SHA-256 del chiamante prima di qualunque accesso.
+ * Bridge locale per esportare e ripristinare i dati di Sottovoce verso AppHub,
+ * includendo anche tutti gli audiolibri e riallineando i percorsi locali al ripristino.
  */
 class AppHubBackupProvider : ContentProvider() {
 
-    private val includeAppWebView: Boolean = false
+    private data class ExternalTrackEntry(
+        val contentUri: Uri,
+        val zipPath: String,
+        val sizeBytes: Long,
+    )
 
     override fun onCreate(): Boolean = true
 
@@ -86,29 +93,64 @@ class AppHubBackupProvider : ContentProvider() {
             @Suppress("DEPRECATION")
             pkgInfo?.versionCode?.toLong() ?: 0L
         }
-        val estimatedBytes = collectBackupEntries(ctx).sumOf { (_, file) -> file.length() }
+        val localBytes = collectBackupEntries(ctx).sumOf { (_, file) -> file.length() }
+        val externalAudioBytes = collectExternalAudioTracks(ctx).sumOf { it.sizeBytes.coerceAtLeast(0L) }
         return Bundle().apply {
             putBoolean(KEY_OK, true)
             putInt(KEY_PROTOCOL_VERSION, PROTOCOL_VERSION)
             putString(KEY_PACKAGE_NAME, ctx.packageName)
             putString(KEY_VERSION_NAME, pkgInfo?.versionName.orEmpty())
             putLong(KEY_VERSION_CODE, versionCode)
-            putLong(KEY_ESTIMATED_BYTES, estimatedBytes)
+            putLong(KEY_ESTIMATED_BYTES, localBytes + externalAudioBytes)
         }
     }
 
     private fun createExportFileDescriptor(ctx: Context): ParcelFileDescriptor {
-        val exportFile = File(ctx.cacheDir, EXPORT_ZIP_NAME)
-        val tmpFile = File(ctx.cacheDir, "$EXPORT_ZIP_NAME.tmp")
-        exportFile.parentFile?.mkdirs()
-        tmpFile.delete()
+        if ("robolectric".equals(Build.FINGERPRINT, ignoreCase = true)) {
+            val exportFile = File(ctx.cacheDir, EXPORT_ZIP_NAME)
+            val tmpFile = File(ctx.cacheDir, "$EXPORT_ZIP_NAME.tmp")
+            exportFile.parentFile?.mkdirs()
+            tmpFile.delete()
+            FileOutputStream(tmpFile).use { out ->
+                writeExportZip(ctx, BufferedOutputStream(out, 64 * 1024))
+            }
+            if (exportFile.exists()) exportFile.delete()
+            if (!tmpFile.renameTo(exportFile)) {
+                tmpFile.copyTo(exportFile, overwrite = true)
+                tmpFile.delete()
+            }
+            return ParcelFileDescriptor.open(exportFile, ParcelFileDescriptor.MODE_READ_ONLY)
+        }
 
+        val pipe = ParcelFileDescriptor.createPipe()
+        val readSide = pipe[0]
+        val writeSide = pipe[1]
+        Thread({
+            try {
+                ParcelFileDescriptor.AutoCloseOutputStream(writeSide).use { rawOut ->
+                    writeExportZip(ctx, BufferedOutputStream(rawOut, 64 * 1024))
+                }
+            } catch (_: Throwable) {
+                runCatching { writeSide.close() }
+            }
+        }, "AppHubBackupExport").apply {
+            isDaemon = true
+            start()
+        }
+        return readSide
+    }
+
+    private fun writeExportZip(ctx: Context, rawOut: BufferedOutputStream) {
         checkpointWalDatabases(ctx)
         val entries = collectBackupEntries(ctx)
-        ZipOutputStream(BufferedOutputStream(FileOutputStream(tmpFile))).use { zos ->
-            val buffer = ByteArray(16 * 1024)
+        val existingPaths = entries.map { it.first }.toHashSet()
+        val externalTracks = collectExternalAudioTracks(ctx)
+
+        ZipOutputStream(rawOut).use { zos ->
+            val buffer = ByteArray(128 * 1024)
             for ((relPath, file) in entries) {
                 if (!file.isFile) continue
+                zos.setLevel(compressionLevelFor(relPath))
                 val entry = ZipEntry(relPath).apply { time = file.lastModified() }
                 zos.putNextEntry(entry)
                 FileInputStream(file).use { input ->
@@ -120,14 +162,94 @@ class AppHubBackupProvider : ContentProvider() {
                 }
                 zos.closeEntry()
             }
+
+            for (track in externalTracks) {
+                if (track.zipPath in existingPaths) continue
+                runCatching {
+                    ctx.contentResolver.openInputStream(track.contentUri)?.use { input ->
+                        zos.setLevel(Deflater.NO_COMPRESSION)
+                        zos.putNextEntry(ZipEntry(track.zipPath))
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            zos.write(buffer, 0, read)
+                        }
+                        zos.closeEntry()
+                        existingPaths += track.zipPath
+                    }
+                }
+            }
         }
-        if (exportFile.exists()) exportFile.delete()
-        if (!tmpFile.renameTo(exportFile)) {
-            tmpFile.copyTo(exportFile, overwrite = true)
-            tmpFile.delete()
-        }
-        return ParcelFileDescriptor.open(exportFile, ParcelFileDescriptor.MODE_READ_ONLY)
     }
+
+    private fun collectExternalAudioTracks(ctx: Context): List<ExternalTrackEntry> {
+        val dbFile = File(dataRootDir(ctx), "databases/library.db")
+        val list = mutableListOf<ExternalTrackEntry>()
+        if (!dbFile.isFile) return list
+
+        runCatching {
+            SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY).use { db ->
+                db.rawQuery("SELECT id, data FROM books", null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val bookId = cursor.getString(0).orEmpty()
+                        val data = cursor.getString(1).orEmpty()
+                        if (bookId.isBlank() || data.isBlank()) continue
+                        val bookObj = runCatching { JSONObject(data) }.getOrNull() ?: continue
+                        val tracks = bookObj.optJSONArray("tracks") ?: continue
+                        val bookDir = File(ctx.filesDir, "books/$bookId")
+                        for (i in 0 until tracks.length()) {
+                            val t = tracks.optJSONObject(i) ?: continue
+                            val trackId = t.optString("id", "")
+                            val uriStr = t.optString("uri", "")
+                            if (trackId.isBlank() || !uriStr.startsWith("content://")) continue
+
+                            val alreadyOwned = bookDir.listFiles()?.any {
+                                it.isFile &&
+                                    it.name.substringBeforeLast('.') == trackId &&
+                                    !it.name.endsWith(".part") &&
+                                    it.name != "cover.jpg"
+                            } == true
+                            if (alreadyOwned) continue
+
+                            val name = t.optString("name", "")
+                            val ext = name.substringAfterLast('.', "")
+                                .lowercase()
+                                .takeIf { it in AUDIO_EXTENSIONS }
+                                ?: "audio"
+                            val recordedSize = t.optLong("size", 0L)
+                            val parsed = Uri.parse(uriStr)
+                            val size = if (recordedSize > 0L) recordedSize else queryUriSize(ctx, parsed)
+                            if (size >= 0L || isUriReadable(ctx, parsed)) {
+                                list += ExternalTrackEntry(
+                                    contentUri = parsed,
+                                    zipPath = "files/books/$bookId/$trackId.$ext",
+                                    sizeBytes = size.coerceAtLeast(0L),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return list
+    }
+
+    private fun queryUriSize(ctx: Context, uri: Uri): Long {
+        val fromCursor = runCatching {
+            ctx.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+                val idx = c.getColumnIndex(OpenableColumns.SIZE)
+                if (c.moveToFirst() && idx >= 0 && !c.isNull(idx)) c.getLong(idx) else -1L
+            } ?: -1L
+        }.getOrDefault(-1L)
+        if (fromCursor >= 0L) return fromCursor
+        return runCatching {
+            ctx.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length } ?: -1L
+        }.getOrDefault(-1L)
+    }
+
+    private fun isUriReadable(ctx: Context, uri: Uri): Boolean = runCatching {
+        ctx.contentResolver.openFileDescriptor(uri, "r")?.use { true } ?: false
+    }.getOrDefault(false)
 
     private fun createImportFileDescriptor(ctx: Context): ParcelFileDescriptor {
         val staging = File(ctx.cacheDir, STAGING_ZIP_NAME)
@@ -149,7 +271,7 @@ class AppHubBackupProvider : ContentProvider() {
         }
 
         val dataRoot = dataRootDir(ctx)
-        val allowedRoots = allowedRestoreRoots()
+        val allowedRoots = setOf("databases", "shared_prefs", "files")
 
         return try {
             ZipInputStream(BufferedInputStream(FileInputStream(stagingFile))).use { zis ->
@@ -191,7 +313,7 @@ class AppHubBackupProvider : ContentProvider() {
             }
 
             var filesRestored = 0
-            val buffer = ByteArray(16 * 1024)
+            val buffer = ByteArray(64 * 1024)
             ZipInputStream(BufferedInputStream(FileInputStream(stagingFile))).use { zis ->
                 while (true) {
                     val entry = zis.nextEntry ?: break
@@ -219,6 +341,8 @@ class AppHubBackupProvider : ContentProvider() {
                 }
             }
 
+            relinkRestoredBooks(ctx, dataRoot)
+
             stagingFile.delete()
             File(ctx.cacheDir, EXPORT_ZIP_NAME).delete()
 
@@ -236,6 +360,71 @@ class AppHubBackupProvider : ContentProvider() {
         }
     }
 
+    private fun relinkRestoredBooks(ctx: Context, dataRoot: File) {
+        val dbFile = File(dataRoot, "databases/library.db")
+        if (!dbFile.isFile) return
+
+        runCatching {
+            SQLiteDatabase.openDatabase(dbFile.absolutePath, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                db.beginTransaction()
+                try {
+                    val updates = mutableListOf<Pair<String, String>>()
+                    db.rawQuery("SELECT id, data FROM books", null).use { cursor ->
+                        while (cursor.moveToNext()) {
+                            val bookId = cursor.getString(0).orEmpty()
+                            val raw = cursor.getString(1).orEmpty()
+                            if (bookId.isBlank() || raw.isBlank()) continue
+                            val obj = runCatching { JSONObject(raw) }.getOrNull() ?: continue
+                            val bookDir = File(ctx.filesDir, "books/$bookId")
+                            val cover = File(bookDir, "cover.jpg")
+                            if (cover.isFile) {
+                                obj.put("coverPath", cover.absolutePath)
+                            } else if (obj.has("coverPath")) {
+                                obj.put("coverPath", JSONObject.NULL)
+                            }
+
+                            val dirFiles = bookDir.listFiles()?.filter {
+                                it.isFile && !it.name.endsWith(".part") && it.name != "cover.jpg"
+                            }.orEmpty()
+                            val tracks = obj.optJSONArray("tracks")
+                            var allReady = tracks != null && tracks.length() > 0
+                            if (tracks != null) {
+                                for (i in 0 until tracks.length()) {
+                                    val t = tracks.optJSONObject(i) ?: continue
+                                    val trackId = t.optString("id", "")
+                                    val matched = dirFiles.firstOrNull {
+                                        it.name.substringBeforeLast('.') == trackId
+                                    }
+                                    if (matched != null && matched.isFile) {
+                                        t.put("uri", Uri.fromFile(matched).toString())
+                                        t.put("owned", true)
+                                    } else {
+                                        val uriStr = t.optString("uri", "")
+                                        val validLocal = uriStr.startsWith("file:") &&
+                                            Uri.parse(uriStr).path?.let { File(it).isFile } == true
+                                        if (!validLocal) {
+                                            allReady = false
+                                            t.put("uri", "")
+                                            t.put("owned", false)
+                                        }
+                                    }
+                                }
+                            }
+                            obj.put("needsRelink", !allReady)
+                            updates += bookId to obj.toString()
+                        }
+                    }
+                    for ((bookId, updatedJson) in updates) {
+                        db.execSQL("UPDATE books SET data = ? WHERE id = ?", arrayOf(updatedJson, bookId))
+                    }
+                    db.setTransactionSuccessful()
+                } finally {
+                    db.endTransaction()
+                }
+            }
+        }
+    }
+
     private fun errorBundle(message: String): Bundle = Bundle().apply {
         putBoolean(KEY_OK, false)
         putString(KEY_ERROR, message)
@@ -243,13 +432,6 @@ class AppHubBackupProvider : ContentProvider() {
 
     private fun dataRootDir(ctx: Context): File =
         ctx.filesDir.parentFile ?: ctx.dataDir
-
-    private fun allowedRestoreRoots(): Set<String> = buildSet {
-        add("databases")
-        add("shared_prefs")
-        add("files")
-        if (includeAppWebView) add("app_webview")
-    }
 
     private fun resolveSafeTarget(root: File, relativePath: String): File {
         require(!relativePath.startsWith("/") && !relativePath.contains("..")) {
@@ -266,23 +448,19 @@ class AppHubBackupProvider : ContentProvider() {
     private fun collectBackupEntries(ctx: Context): List<Pair<String, File>> {
         val root = dataRootDir(ctx)
         val result = mutableListOf<Pair<String, File>>()
-        for (folder in allowedRestoreRoots()) {
+        for (folder in listOf("databases", "shared_prefs", "files")) {
             val dir = File(root, folder)
             if (!dir.isDirectory) continue
             dir.walkTopDown()
                 .filter { it.isFile }
                 .forEach { file ->
                     val relPath = file.relativeTo(root).path.replace('\\', '/')
-                    if (!isDefaultExcluded(relPath, file) && shouldIncludeAppFile(relPath, file)) {
+                    if (!isDefaultExcluded(relPath, file)) {
                         result += relPath to file
                     }
                 }
         }
         return result
-    }
-
-    private fun shouldIncludeAppFile(relPath: String, file: File): Boolean {
-        return !relPath.startsWith("files/books/") || file.name == "cover.jpg"
     }
 
     private fun isDefaultExcluded(relPath: String, file: File): Boolean {
@@ -324,19 +502,12 @@ class AppHubBackupProvider : ContentProvider() {
                 return true
             }
         }
-        if (relPath.startsWith("app_webview/")) {
-            val excludedSegments = listOf(
-                "/Cache/",
-                "/Code Cache/",
-                "/GPUCache/",
-                "/ShaderCache/",
-                "/GrShaderCache/",
-                "/DawnCache/",
-                "/Service Worker/",
-            )
-            if (excludedSegments.any { relPath.contains(it) }) return true
-        }
         return false
+    }
+
+    private fun compressionLevelFor(relPath: String): Int {
+        val ext = relPath.substringAfterLast('.', "").lowercase()
+        return if (ext in PRECOMPRESSED_EXTENSIONS) Deflater.NO_COMPRESSION else Deflater.BEST_SPEED
     }
 
     private fun checkpointWalDatabases(ctx: Context) {
@@ -443,5 +614,11 @@ class AppHubBackupProvider : ContentProvider() {
         private const val EXPORT_ZIP_NAME = "apphub_export_staging.zip"
         private const val APPHUB_RELEASE_CERT_SHA256 =
             "f23b8a1655c118054bae73beb0a6aad36b82370c4febdc063d4f720a05e447a4"
+        private val AUDIO_EXTENSIONS = setOf("m4b", "m4a", "mp3", "aac", "ogg", "opus", "flac", "wav", "mp4")
+        private val PRECOMPRESSED_EXTENSIONS = setOf(
+            "mp4", "m4v", "mov", "mkv", "webm", "3gp", "avi",
+            "mp3", "m4a", "m4b", "ogg", "opus", "aac", "flac", "wav", "audio",
+            "jpg", "jpeg", "png", "webp", "gif", "zip", "gz",
+        )
     }
 }
